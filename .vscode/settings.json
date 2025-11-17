@@ -1,0 +1,7 @@
+{
+  "dart.analysisExcludedFolders": [],
+  "dart.showIgnoreForFile": false,
+  "dart.analysisServerFolding": false,
+  "problems.decorations.enabled": true,
+  "dart.lineLength": 120
+}

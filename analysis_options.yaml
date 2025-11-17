@@ -1,0 +1,32 @@
+include: package:flutter_lints/flutter.yaml
+
+analyzer:
+  errors:
+    # 重要でない警告のみ無効化（リリース用に最小限に）
+    deprecated_member_use: ignore
+    
+  # 除外するファイルパターン
+  exclude:
+    - "**/*.g.dart"
+    - "**/*.freezed.dart"
+    - "**/build/**"
+
+linter:
+  rules:
+    # コードの品質を向上させる規則を有効化
+    prefer_const_constructors: true
+    prefer_final_fields: true
+    prefer_const_literals_to_create_immutables: true
+    prefer_const_constructors_in_immutables: true
+    
+    # デバッグ用print文を警告（リリース前に削除推奨）
+    avoid_print: true
+    
+    # その他のベストプラクティス
+    use_key_in_widget_constructors: true
+    prefer_single_quotes: true
+    sort_pub_dependencies: true
+    
+    # セキュリティとパフォーマンス
+    avoid_web_libraries_in_flutter: true
+    use_build_context_synchronously: true
