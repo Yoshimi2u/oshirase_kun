@@ -21,7 +21,7 @@ class UserProfile {
 
     return UserProfile(
       uid: doc.id,
-      displayName: data['displayName'] as String? ?? '',
+      displayName: data['displayName'] as String? ?? 'ユーザー',
       createdAt: data['createdAt'] != null ? (data['createdAt'] as Timestamp).toDate() : now,
       updatedAt: data['updatedAt'] != null ? (data['updatedAt'] as Timestamp).toDate() : now,
     );

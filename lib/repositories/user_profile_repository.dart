@@ -88,6 +88,18 @@ class UserProfileRepository {
         if (kDebugMode) {
           print('[UserProfileRepository] 初回プロフィール作成: $uid (名前: $displayName)');
         }
+      } else {
+        // ドキュメントが存在するがdisplayNameが空の場合は更新
+        final data = doc.data();
+        if (data != null) {
+          final currentDisplayName = data['displayName'] as String?;
+          if (currentDisplayName == null || currentDisplayName.isEmpty) {
+            await updateDisplayName(uid, displayName);
+            if (kDebugMode) {
+              print('[UserProfileRepository] 既存プロフィールのdisplayNameを更新: $uid (名前: $displayName)');
+            }
+          }
+        }
       }
     } catch (e) {
       if (kDebugMode) {

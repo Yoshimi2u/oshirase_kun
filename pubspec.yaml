@@ -42,6 +42,7 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_launcher_icons: ^0.13.1
+  flutter_native_splash: ^2.3.10
 
 flutter:
   uses-material-design: true
@@ -57,3 +58,31 @@ flutter_launcher_icons:
   adaptive_icon_foreground: "assets/icon/foreground.png"
   adaptive_icon_background: "assets/icon/background.png"
   min_sdk_android: 21 # android min sdk min:16, default 21
+
+# スプラッシュスクリーン設定
+flutter_native_splash:
+  # カスタマイズ可能な項目
+  color: "#ffffff"  # 背景色（白）
+  image: assets/icon/app_icon.png  # スプラッシュ画像（Androidのみ）
+  # color_dark: "#000000"  # ダークモード時の背景色
+  # image_dark: assets/icon/splash_icon_dark.png  # ダークモード時の画像
+  
+  # Android設定
+  android: true
+  android_12:
+    # Android 12+ 用の設定
+    image: assets/icon/app_icon.png
+    color: "#ffffff"
+    # icon_background_color: "#ffffff"  # アイコン背景色
+  
+  # iOS設定（アイコンなし、背景色のみ）
+  ios: true
+  
+  # Web設定（オプション）
+  web: false
+  
+  # 全画面表示
+  fullscreen: true
+  
+  # Android Gravity（画像の配置）
+  android_gravity: center

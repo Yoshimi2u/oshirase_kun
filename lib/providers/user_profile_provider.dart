@@ -28,7 +28,12 @@ final userProfileStreamProvider = StreamProvider.autoDispose<UserProfile?>((ref)
   // 初回アクセス時にプロフィールが存在しない場合は作成
   final profile = await repository.getUserProfile(userId);
   if (profile == null) {
-    await repository.createProfileIfNotExists(userId);
+    await repository.createProfileIfNotExists(userId, displayName: 'ユーザー');
+    // プロフィール作成完了を待つため、再度取得
+    final createdProfile = await repository.getUserProfile(userId);
+    if (createdProfile != null) {
+      yield createdProfile;
+    }
   }
 
   // Streamを返す
