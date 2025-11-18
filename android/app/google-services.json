@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "551061753942",
+    "project_id": "oshirase-kun",
+    "storage_bucket": "oshirase-kun.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:551061753942:android:8274a1b80686e6c7622bf7",
+        "android_client_info": {
+          "package_name": "com.higuraku.oshirasekun"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDTTwXl8zz5oS0PxsPTEgagGZz3Fhd9ZTA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -1,6 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'services/analytics_service.dart';
+import 'screens/schedule_list_screen.dart';
+import 'screens/schedule_form_screen.dart';
+import 'screens/settings_screen.dart';
+import 'screens/calendar_screen.dart';
+import 'screens/group_screen.dart';
 
 // Firebase Analyticsでページ遷移を追跡するNavigatorObserver
 class AnalyticsRouteObserver extends NavigatorObserver {
@@ -36,6 +41,11 @@ class AnalyticsRouteObserver extends NavigatorObserver {
   String _getScreenName(String routeName) {
     final routeScreenNameMap = {
       '/': 'ホーム',
+      '/schedule/create': '予定作成',
+      '/schedule/edit': '予定編集',
+      '/calendar': 'カレンダー',
+      '/settings': '設定',
+      '/groups': 'グループ管理',
     };
 
     // パラメータ付きのルートを処理
@@ -49,23 +59,6 @@ class AnalyticsRouteObserver extends NavigatorObserver {
   }
 }
 
-// ホーム画面のプレースホルダー
-class HomePage extends StatelessWidget {
-  const HomePage({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('ホーム'),
-      ),
-      body: const Center(
-        child: Text('ここにアプリの内容を実装してください'),
-      ),
-    );
-  }
-}
-
 final GoRouter router = GoRouter(
   initialLocation: '/',
   observers: [AnalyticsRouteObserver()],
@@ -73,7 +66,40 @@ final GoRouter router = GoRouter(
     GoRoute(
       path: '/',
       pageBuilder: (context, state) => _buildPageWithoutAnimation(
-        const HomePage(),
+        const ScheduleListScreen(),
+      ),
+    ),
+    GoRoute(
+      path: '/schedule/create',
+      pageBuilder: (context, state) => _buildPageWithAnimation(
+        const ScheduleFormScreen(),
+      ),
+    ),
+    GoRoute(
+      path: '/schedule/edit/:id',
+      pageBuilder: (context, state) {
+        final id = state.pathParameters['id'];
+        return _buildPageWithAnimation(
+          ScheduleFormScreen(scheduleId: id),
+        );
+      },
+    ),
+    GoRoute(
+      path: '/calendar',
+      pageBuilder: (context, state) => _buildPageWithAnimation(
+        const CalendarScreen(),
+      ),
+    ),
+    GoRoute(
+      path: '/settings',
+      pageBuilder: (context, state) => _buildPageWithAnimation(
+        const SettingsScreen(),
+      ),
+    ),
+    GoRoute(
+      path: '/groups',
+      pageBuilder: (context, state) => _buildPageWithAnimation(
+        const GroupScreen(),
       ),
     ),
   ],

@@ -5,38 +5,14 @@ import 'dart:async';
 
 /// 広告管理クラス
 class AdManager {
-  // デバッグフラグ（より確実にデバッグモードを判定）
-  static bool get _isDebugMode {
-    bool debugMode = false;
-    assert(debugMode = true); // Debug モードの場合のみ true になる
-    return debugMode;
-  }
-
   static String get bannerAdUnitId {
-    if (_isDebugMode) {
-      // デバッグモード時はテスト用の広告ユニットIDを使用
-      if (kDebugMode) {
-        print('[AdManager] デバッグモード - テスト用バナー広告ID使用');
-      }
-      if (Platform.isAndroid) {
-        return 'ca-app-pub-3940256099942544/6300978111';
-      } else if (Platform.isIOS) {
-        return 'ca-app-pub-3940256099942544/2934735716';
-      }
-    } else {
-      // リリースモード時は本番用の広告ユニットIDを使用
-      if (kDebugMode) {
-        print('[AdManager] リリースモード - メディエーション対応バナー広告ID使用');
-      }
-      if (Platform.isAndroid) {
-        // メディエーション設定は既存の広告ユニットIDに対して適用される
-        // AdMobダッシュボードでメディエーション設定を完了後、このIDでUnity Ads配信開始
-        return 'ca-app-pub-4176965988231465/6369731480';
-      } else if (Platform.isIOS) {
-        // メディエーション設定は既存の広告ユニットIDに対して適用される
-        // AdMobダッシュボードでメディエーション設定を完了後、このIDでUnity Ads配信開始
-        return 'ca-app-pub-4176965988231465/8727914473';
-      }
+    if (kDebugMode) {
+      print('[AdManager] テスト用バナー広告ID使用');
+    }
+    if (Platform.isAndroid) {
+      return 'ca-app-pub-3940256099942544/6300978111';
+    } else if (Platform.isIOS) {
+      return 'ca-app-pub-3940256099942544/2934735716';
     }
     throw UnsupportedError('Unsupported platform');
   }
@@ -44,65 +20,16 @@ class AdManager {
   // インタースティシャル広告は未使用のためIDは廃止
 
   /// 設定画面などのインライン表示用バナー広告ユニットIDを取得
-  /// 注意：本番IDは後で差し替えます。未設定時（空文字）の場合はUI側でプレースホルダー表示にフォールバックしてください。
   static String get inlineBannerAdUnitId {
-    if (_isDebugMode) {
-      // デバッグ時は標準のテスト用バナーIDを使用
-      if (kDebugMode) {
-        print('[AdManager] デバッグモード - テスト用インラインバナー広告ID使用');
-      }
-      if (Platform.isAndroid) {
-        return 'ca-app-pub-3940256099942544/6300978111';
-      } else if (Platform.isIOS) {
-        return 'ca-app-pub-3940256099942544/2934735716';
-      }
-    } else {
-      // 本番IDは取得後に設定する。現時点では空文字を返し、UIでプレースホルダーに委ねる。
-      if (kDebugMode) {
-        print('[AdManager] リリースモード - インラインバナー広告IDは未設定');
-      }
-      if (Platform.isAndroid) {
-        return 'ca-app-pub-4176965988231465/4223703115';
-      } else if (Platform.isIOS) {
-        return 'ca-app-pub-4176965988231465/7707103810';
-      }
+    if (kDebugMode) {
+      print('[AdManager] テスト用インラインバナー広告ID使用');
+    }
+    if (Platform.isAndroid) {
+      return 'ca-app-pub-3940256099942544/6300978111';
+    } else if (Platform.isIOS) {
+      return 'ca-app-pub-3940256099942544/2934735716';
     }
     throw UnsupportedError('Unsupported platform');
-  }
-
-  /// リワード広告のユニットIDを取得
-  static String get rewardedAdUnitId {
-    if (_isDebugMode) {
-      if (kDebugMode) {
-        print('[AdManager] デバッグモード - テスト用リワード広告ID使用');
-      }
-      if (Platform.isAndroid) {
-        return 'ca-app-pub-3940256099942544/5224354917';
-      } else if (Platform.isIOS) {
-        return 'ca-app-pub-3940256099942544/1712485313';
-      }
-    } else {
-      if (kDebugMode) {
-        print('[AdManager] リリースモード - メディエーション対応リワード広告ID使用');
-      }
-      if (Platform.isAndroid) {
-        return 'ca-app-pub-4176965988231465/1771614459';
-      } else if (Platform.isIOS) {
-        return 'ca-app-pub-4176965988231465/4437429953';
-      }
-    }
-    throw UnsupportedError('Unsupported platform');
-  }
-
-  /// Unity Game IDを取得
-  static String get unityGameId {
-    if (_isDebugMode) {
-      // デバッグモード時はテスト用のGame IDを使用
-      return Platform.isAndroid ? '14851' : '14850';
-    } else {
-      // リリースモード時は本番用のGame IDを使用
-      return Platform.isAndroid ? '5921213' : '5921212';
-    }
   }
 
   /// Mobile Ads SDKとUnity Adsを初期化

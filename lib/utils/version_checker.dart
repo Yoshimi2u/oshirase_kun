@@ -73,7 +73,7 @@ class VersionChecker {
       try {
         final defaultStoreUrl = Platform.isIOS
             ? 'https://apps.apple.com/jp/app/id6749101695'
-            : 'https://play.google.com/store/apps/details?id=com.harukana.shoppinglist';
+            : 'https://play.google.com/store/apps/details?id=com.higuraku.oshirasekun';
         await rc.setDefaults({
           latestKey: currentVersion, // 既定は現行=最新扱い
           minKey: currentVersion, // 既定は強制なし

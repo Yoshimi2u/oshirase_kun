@@ -7,7 +7,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>スマレピ</string>
+	<string>お知らせ君</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -15,7 +15,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>スマレピ</string>
+	<string>お知らせ君</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -25,13 +25,9 @@
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>GADApplicationIdentifier</key>
-	<string>ca-app-pub-4176965988231465~6788146841</string>
+	<string>ca-app-pub-3940256099942544~1458002511</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
-	<key>NSCameraUsageDescription</key>
-	<string>レシピの写真を撮影して、あなたの料理記録をより豊かにするためにカメラを使用します。撮影した写真はアプリ内でのみ使用され、外部に送信されることはありません。</string>
-	<key>NSPhotoLibraryUsageDescription</key>
-	<string>保存済みの写真からレシピ画像を選択して、料理の記録をより視覚的に管理できるようにします。選択した画像はアプリ内でのみ使用され、外部に送信されることはありません。</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>
@@ -40,8 +36,11 @@
 	<string>Main</string>
 	<key>NSUserTrackingUsageDescription</key>
 	<string>このアプリでは広告の最適化や分析のために、他社のアプリやWebサイトを横断したデータの利用許可をお願いしています。</string>
-	<key>NSLocalNetworkUsageDescription</key>
-	<string>デバッグや共有機能のためにローカルネットワークを利用します。</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>fetch</string>
+		<string>remote-notification</string>
+	</array>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>

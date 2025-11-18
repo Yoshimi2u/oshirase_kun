@@ -1,5 +1,7 @@
-package com.harukana.shoppinglist
+package com.higuraku.oshirasekun
 
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.os.Build
 import android.os.Bundle
 import android.view.View
@@ -13,8 +15,27 @@ class MainActivity : FlutterActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
+        // FCM通知チャネルの作成
+        createNotificationChannel()
+        
         // 広告表示に配慮したエッジ ツー エッジ表示設定
         configureSystemUI()
+    }
+    
+    private fun createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channelId = "default_channel"
+            val channelName = "お知らせ"
+            val importance = NotificationManager.IMPORTANCE_HIGH
+            val channel = NotificationChannel(channelId, channelName, importance).apply {
+                description = "タスクのお知らせ通知"
+                enableVibration(true)
+                enableLights(true)
+            }
+            
+            val notificationManager = getSystemService(NotificationManager::class.java)
+            notificationManager.createNotificationChannel(channel)
+        }
     }
     
     private fun configureSystemUI() {

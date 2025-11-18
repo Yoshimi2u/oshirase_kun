@@ -3,25 +3,41 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:app_tracking_transparency/app_tracking_transparency.dart';
+import 'package:intl/date_symbol_data_local.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'services/ad_manager.dart';
 import 'services/ad_free_manager.dart';
+import 'services/fcm_service.dart';
 import 'router.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-// import 'firebase_options.dart'; // 新しいプロジェクトで flutterfire configure を実行して生成してください
+import 'firebase_options.dart';
 import 'services/auth_service.dart';
 import 'services/analytics_service.dart';
 import 'widgets/global_loading_overlay.dart';
+import 'widgets/global_banner_ad.dart';
 import 'services/loading_service.dart';
+
+/// バックグラウンドメッセージハンドラー（トップレベル関数として定義）
+@pragma('vm:entry-point')
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  if (kDebugMode) {
+    print('[FCM] バックグラウンドメッセージ受信:');
+    print('  タイトル: ${message.notification?.title}');
+    print('  本文: ${message.notification?.body}');
+  }
+}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // 日付フォーマットのロケールデータを初期化
+  await initializeDateFormatting('ja_JP', null);
+
   // Firebase初期化
-  // 注: firebase_options.dart を flutterfire configure で生成した後、
-  // 以下のコメントを解除してください
-  /*
   try {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
@@ -40,6 +56,9 @@ void main() async {
     }
   }
 
+  // バックグラウンドメッセージハンドラーを設定
+  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+
   // Firebase Authentication 匿名認証
   try {
     final initialUser = await FirebaseAuth.instance.authStateChanges().first;
@@ -51,7 +70,6 @@ void main() async {
       print('匿名認証エラー: $e');
     }
   }
-  */
 
   // App Tracking Transparency 許可リクエスト（iOSのみ）
   try {
@@ -117,6 +135,25 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _initializeFCM();
+  }
+
+  /// FCMを初期化
+  Future<void> _initializeFCM() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        final fcmService = FCMService();
+        await fcmService.initialize(user.uid);
+        if (kDebugMode) {
+          print('[MyApp] FCM初期化完了');
+        }
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('[MyApp] FCM初期化エラー: $e');
+      }
+    }
   }
 
   @override
@@ -130,8 +167,16 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     return MaterialApp.router(
       routerConfig: router,
-      title: 'Flutter App Template',
+      title: 'お知らせ君',
       debugShowCheckedModeBanner: false,
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      supportedLocales: const [
+        Locale('ja', 'JP'),
+      ],
       theme: ThemeData(
         useMaterial3: true,
         colorScheme: ColorScheme.light(
@@ -149,7 +194,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         final base = child ?? const SizedBox.shrink();
         return Stack(
           children: [
-            base,
+            GlobalBannerAd(child: base),
             const GlobalLoadingOverlay(),
           ],
         );

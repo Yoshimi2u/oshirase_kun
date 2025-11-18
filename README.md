@@ -1,26 +1,38 @@
-# Flutter App Template
+# お知らせ君 (oshirase_kun)
 
-Firebase連携とAdMob広告を含む、Flutterアプリケーションの汎用テンプレートです。
+予定を登録して毎日定時に通知を送るシンプルなリマインダーアプリです。
 
 ## 主な機能
 
-### 共通機能
-- Firebase連携（Analytics、Auth、Firestore、Storage、Functions、Remote Config）
-- AdMob広告統合（バナー広告、広告非表示管理）
-- Firebase Analytics イベントトラッキング
-- 匿名認証
-- Riverpod状態管理
-- GoRouterによるナビゲーション
-- グローバルローディング表示
-- iOS App Tracking Transparency (ATT) 対応
+### 予定管理
+- 予定のタイトルと説明を設定
+- 通知時刻を自由に設定（デフォルト: 午前5時）
+- 繰り返しパターンの選択
+  - 繰り返しなし（1回のみ）
+  - 毎日
+  - 毎週
+  - 毎月
+  - カスタム（〇日ごと）
 
-### 保持されているサービス
-- `services/ad_manager.dart` - AdMob広告の初期化と管理
-- `services/ad_free_manager.dart` - 広告非表示機能の管理
-- `services/ad_diagnostic_service.dart` - 広告診断サービス（開発時のみ）
-- `services/analytics_service.dart` - Firebase Analyticsのラッパー
-- `services/auth_service.dart` - Firebase Authentication管理
-- `services/loading_service.dart` - グローバルローディング管理
+### 通知機能
+- ローカル通知による定時リマインダー
+- 予定ごとにON/OFF切り替え可能
+- バックグラウンドでも動作
+
+### データ保存
+- Cloud Firestoreによるクラウド保存
+- 複数デバイスでの同期に対応
+- Firebase Authenticationによる匿名認証
+
+## 技術スタック
+
+- **フレームワーク**: Flutter
+- **状態管理**: Riverpod
+- **ルーティング**: GoRouter
+- **データベース**: Cloud Firestore
+- **通知**: flutter_local_notifications
+- **認証**: Firebase Authentication
+- **広告**: Google AdMob
 
 ## セットアップ
 
@@ -33,56 +45,105 @@ flutter pub get
 1. Firebase Consoleで新しいプロジェクトを作成
 2. iOS/Androidアプリを追加
 3. `google-services.json`（Android）と`GoogleService-Info.plist`（iOS）をダウンロード
-4. 各プラットフォームの適切なディレクトリに配置
+4. 各プラットフォームの適切なディレクトリに配置:
+   - Android: `android/app/google-services.json`
+   - iOS: `ios/Runner/GoogleService-Info.plist`
 5. Firebase CLIを使用して`firebase_options.dart`を生成:
 ```bash
 flutterfire configure
 ```
 
-### 3. AdMob設定
-1. AdMob アカウントを作成
-2. アプリを登録してApp IDを取得
-3. `android/app/src/main/AndroidManifest.xml`と`ios/Runner/Info.plist`にApp IDを設定
-4. `services/ad_manager.dart`内の広告ユニットIDを更新
+6. `lib/main.dart`のFirebase初期化コードのコメントを解除
 
-### 4. パッケージ名とアプリ名の変更
-- `pubspec.yaml`の`name`を変更
-- Android: `android/app/build.gradle`の`applicationId`を変更
-- iOS: Xcodeでバンドル識別子を変更
-- `lib/main.dart`のアプリタイトルを変更
+### 3. Firestoreセキュリティルールの設定
+Firebase Consoleで以下のセキュリティルールを設定してください:
+
+```javascript
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{userId}/schedules/{scheduleId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+  }
+}
+```
+
+### 4. Android通知設定
+`android/app/src/main/AndroidManifest.xml`に以下の権限を追加:
+
+```xml
+<uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+<uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
+<uses-permission android:name="android.permission.USE_EXACT_ALARM"/>
+<uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+```
+
+### 5. iOS通知設定
+`ios/Runner/Info.plist`に以下を追加:
+
+```xml
+<key>UIBackgroundModes</key>
+<array>
+    <string>fetch</string>
+    <string>remote-notification</string>
+</array>
+```
+
+### 6. AdMob設定（オプション）
+広告を有効にする場合:
+1. AdMobアカウントを作成
+2. `android/app/src/main/AndroidManifest.xml`と`ios/Runner/Info.plist`にApp IDを設定
+3. `lib/services/ad_manager.dart`内の広告ユニットIDを更新
 
 ## プロジェクト構造
 
 ```
 lib/
-├── main.dart                 # アプリケーションのエントリーポイント
-├── router.dart               # GoRouterの設定
-├── firebase_options.dart     # Firebase設定（自動生成）
-├── constants/                # 定数定義
-├── db/                       # データベース関連
-├── provider/                 # Riverpod プロバイダー
-├── services/                 # ビジネスロジックとサービス
-├── utils/                    # ユーティリティ関数
-└── widgets/                  # 再利用可能なウィジェット
+├── main.dart                          # アプリのエントリーポイント
+├── router.dart                        # GoRouterの設定
+├── models/
+│   └── schedule.dart                  # 予定のデータモデル
+├── repositories/
+│   └── schedule_repository.dart       # Firestore操作
+├── providers/
+│   └── schedule_provider.dart         # Riverpod状態管理
+├── services/
+│   ├── notification_service.dart      # 通知管理
+│   ├── ad_manager.dart                # 広告管理
+│   ├── ad_free_manager.dart           # 広告非表示管理
+│   ├── analytics_service.dart         # Analytics
+│   ├── auth_service.dart              # 認証サービス
+│   └── loading_service.dart           # ローディング管理
+├── screens/
+│   ├── schedule_list_screen.dart      # 予定一覧画面
+│   └── schedule_form_screen.dart      # 予定登録・編集画面
+└── widgets/
+    ├── banner_ad_widget.dart          # バナー広告
+    └── global_loading_overlay.dart    # ローディング表示
 ```
 
 ## 使い方
 
-### 画面の追加
-1. 画面ウィジェットを作成
-2. `router.dart`にルートを追加
+### 予定の追加
+1. ホーム画面右下の「予定を追加」ボタンをタップ
+2. タイトルと説明を入力
+3. 通知時刻を設定
+4. 繰り返しパターンを選択
+5. 「予定を作成」ボタンをタップ
 
-### Firebaseサービスの利用
-```dart
-// Analytics
-AnalyticsService.logEvent('event_name', parameters: {'key': 'value'});
+### 予定の編集
+1. 予定一覧から編集したい予定をタップ
+2. 内容を変更
+3. 「予定を更新」ボタンをタップ
 
-// Firestore
-FirebaseFirestore.instance.collection('users').doc(userId).get();
-```
+### 予定の削除
+1. 予定一覧から削除したい予定をタップ
+2. 右上のゴミ箱アイコンをタップ
+3. 確認ダイアログで「削除」を選択
 
-### 広告の表示
-`widgets/banner_ad_widget.dart`を使用してバナー広告を表示できます。
+### 通知のON/OFF
+予定一覧画面の各予定カード右側のスイッチで切り替えができます。
 
 ## ビルド
 
@@ -98,13 +159,20 @@ flutter build appbundle --release
 flutter build ios --release
 ```
 
-## 注意事項
+## トラブルシューティング
 
-- Firebaseプロジェクトの設定ファイルは含まれていません。各自で設定してください
-- AdMob App IDと広告ユニットIDは、実際の値に置き換える必要があります
-- iOS用のApp Store IDは`version_checker.dart`などで使用される場合があります
+### 通知が届かない
+- Android 13以降では通知権限の許可が必要です
+- 設定アプリでアプリの通知権限を確認してください
+- バッテリー最適化の除外設定も確認してください
+
+### Firestoreに接続できない
+- `firebase_options.dart`が正しく生成されているか確認
+- Firebase Consoleでプロジェクトが有効になっているか確認
+- セキュリティルールが正しく設定されているか確認
 
 ## ライセンス
 
-このテンプレートは自由に使用・改変できます。
+このプロジェクトは自由に使用・改変できます。
+
 
