@@ -16,7 +16,7 @@
         <!-- AdMob App ID (テスト用) -->
         <meta-data
             android:name="com.google.android.gms.ads.APPLICATION_ID"
-            android:value="ca-app-pub-3940256099942544~3347511713"/>
+            android:value="ca-app-pub-4176965988231465~9547148144"/>
         
         <!-- FCMのデフォルト通知設定 -->
         <meta-data

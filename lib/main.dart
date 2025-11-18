@@ -6,6 +6,7 @@ import 'package:app_tracking_transparency/app_tracking_transparency.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'services/ad_manager.dart';
 import 'services/ad_free_manager.dart';
 import 'services/fcm_service.dart';
@@ -34,6 +35,18 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // .envファイルを読み込み
+  try {
+    await dotenv.load(fileName: '.env');
+    if (kDebugMode) {
+      print('[Main] .envファイルを読み込みました');
+    }
+  } catch (e) {
+    if (kDebugMode) {
+      print('[Main] .envファイルの読み込みに失敗しました（デバッグモードではテスト用IDを使用）: $e');
+    }
+  }
 
   // 日付フォーマットのロケールデータを初期化
   await initializeDateFormatting('ja_JP', null);

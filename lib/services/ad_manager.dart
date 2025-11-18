@@ -1,5 +1,6 @@
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'dart:io';
 import 'dart:async';
 
@@ -8,11 +9,19 @@ class AdManager {
   static String get bannerAdUnitId {
     if (kDebugMode) {
       print('[AdManager] テスト用バナー広告ID使用');
-    }
-    if (Platform.isAndroid) {
-      return 'ca-app-pub-3940256099942544/6300978111';
-    } else if (Platform.isIOS) {
-      return 'ca-app-pub-3940256099942544/2934735716';
+      // デバッグモードではテスト用IDを使用
+      if (Platform.isAndroid) {
+        return 'ca-app-pub-3940256099942544/6300978111';
+      } else if (Platform.isIOS) {
+        return 'ca-app-pub-3940256099942544/2934735716';
+      }
+    } else {
+      // 本番環境では.envから読み込み
+      if (Platform.isAndroid) {
+        return dotenv.env['ADMOB_BANNER_ANDROID'] ?? 'ca-app-pub-3940256099942544/6300978111';
+      } else if (Platform.isIOS) {
+        return dotenv.env['ADMOB_BANNER_IOS'] ?? 'ca-app-pub-3940256099942544/2934735716';
+      }
     }
     throw UnsupportedError('Unsupported platform');
   }
@@ -23,11 +32,19 @@ class AdManager {
   static String get inlineBannerAdUnitId {
     if (kDebugMode) {
       print('[AdManager] テスト用インラインバナー広告ID使用');
-    }
-    if (Platform.isAndroid) {
-      return 'ca-app-pub-3940256099942544/6300978111';
-    } else if (Platform.isIOS) {
-      return 'ca-app-pub-3940256099942544/2934735716';
+      // デバッグモードではテスト用IDを使用
+      if (Platform.isAndroid) {
+        return 'ca-app-pub-3940256099942544/6300978111';
+      } else if (Platform.isIOS) {
+        return 'ca-app-pub-3940256099942544/2934735716';
+      }
+    } else {
+      // 本番環境では.envから読み込み
+      if (Platform.isAndroid) {
+        return dotenv.env['ADMOB_INLINE_BANNER_ANDROID'] ?? 'ca-app-pub-3940256099942544/6300978111';
+      } else if (Platform.isIOS) {
+        return dotenv.env['ADMOB_INLINE_BANNER_IOS'] ?? 'ca-app-pub-3940256099942544/2934735716';
+      }
     }
     throw UnsupportedError('Unsupported platform');
   }
