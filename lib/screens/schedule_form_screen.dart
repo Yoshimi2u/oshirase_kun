@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../models/schedule.dart';
 import '../providers/schedule_provider.dart';
 import '../providers/group_provider.dart';
+import '../utils/toast_utils.dart';
 
 /// 予定登録・編集画面
 class ScheduleFormScreen extends ConsumerStatefulWidget {
@@ -142,24 +143,14 @@ class _ScheduleFormScreenState extends ConsumerState<ScheduleFormScreen> {
       }
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              widget.scheduleId == null ? '予定を作成しました' : '予定を更新しました',
-            ),
-            backgroundColor: Colors.green,
-          ),
+        ToastUtils.showSuccess(
+          widget.scheduleId == null ? '予定を作成しました' : '予定を更新しました',
         );
         context.pop();
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('エラー: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        ToastUtils.showError('操作に失敗しました');
       }
     }
   }
@@ -189,22 +180,12 @@ class _ScheduleFormScreenState extends ConsumerState<ScheduleFormScreen> {
         await ref.read(scheduleNotifierProvider.notifier).deleteSchedule(widget.scheduleId!);
 
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('予定を削除しました'),
-              backgroundColor: Colors.green,
-            ),
-          );
+          ToastUtils.showSuccess('予定を削除しました');
           context.pop();
         }
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('エラー: $e'),
-              backgroundColor: Colors.red,
-            ),
-          );
+          ToastUtils.showError('削除に失敗しました');
         }
       }
     }

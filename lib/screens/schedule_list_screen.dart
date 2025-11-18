@@ -22,6 +22,9 @@ class _ScheduleListScreenState extends ConsumerState<ScheduleListScreen> with Si
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
+    _tabController.addListener(() {
+      setState(() {});
+    });
   }
 
   @override
@@ -65,15 +68,20 @@ class _ScheduleListScreenState extends ConsumerState<ScheduleListScreen> with Si
           CalendarScreen(),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () {
-          context.push('/schedule/create');
-        },
-        backgroundColor: Colors.blue,
-        foregroundColor: Colors.white,
-        icon: const Icon(Icons.add),
-        label: const Text('予定を追加'),
-      ),
+      floatingActionButton: _tabController.index != 2
+          ? FloatingActionButton.extended(
+              onPressed: () {
+                context.push('/schedule/create');
+              },
+              backgroundColor: Colors.blue,
+              foregroundColor: Colors.white,
+              icon: const Icon(Icons.add),
+              label: const Text(
+                '予定を追加',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+            )
+          : null,
     );
   }
 }

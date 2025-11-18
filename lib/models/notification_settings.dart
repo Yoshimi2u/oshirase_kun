@@ -1,65 +1,59 @@
-/// 通知設定を管理するモデルクラス
+/// 通知設定モデル
 class NotificationSettings {
-  final int morningHour; // 朝の通知時刻（0-23）
-  final int eveningHour; // 夜の通知時刻（0-23）
-  final bool morningEnabled; // 朝の通知を有効にするか
-  final bool eveningEnabled; // 夜の通知を有効にするか
+  final bool morningEnabled;
+  final int morningHour;
+  final bool eveningEnabled;
+  final int eveningHour;
 
   NotificationSettings({
+    required this.morningEnabled,
     required this.morningHour,
+    required this.eveningEnabled,
     required this.eveningHour,
-    this.morningEnabled = true,
-    this.eveningEnabled = true,
   });
 
-  /// デフォルト設定（朝7時、夜18時）
+  /// デフォルト設定
   factory NotificationSettings.defaultSettings() {
     return NotificationSettings(
-      morningHour: 7,
-      eveningHour: 18,
       morningEnabled: true,
+      morningHour: 8,
       eveningEnabled: true,
+      eveningHour: 20,
+    );
+  }
+
+  /// Firestoreからデータを取得
+  factory NotificationSettings.fromFirestore(Map<String, dynamic> data) {
+    return NotificationSettings(
+      morningEnabled: data['morningEnabled'] as bool? ?? true,
+      morningHour: data['morningHour'] as int? ?? 8,
+      eveningEnabled: data['eveningEnabled'] as bool? ?? true,
+      eveningHour: data['eveningHour'] as int? ?? 20,
     );
   }
 
   /// Firestoreに保存する形式に変換
   Map<String, dynamic> toFirestore() {
     return {
-      'morningHour': morningHour,
-      'eveningHour': eveningHour,
       'morningEnabled': morningEnabled,
+      'morningHour': morningHour,
       'eveningEnabled': eveningEnabled,
+      'eveningHour': eveningHour,
     };
   }
 
-  /// Firestoreから復元
-  factory NotificationSettings.fromFirestore(Map<String, dynamic> data) {
-    return NotificationSettings(
-      morningHour: data['morningHour'] ?? 7,
-      eveningHour: data['eveningHour'] ?? 18,
-      morningEnabled: data['morningEnabled'] ?? true,
-      eveningEnabled: data['eveningEnabled'] ?? true,
-    );
-  }
-
-  /// JSON形式に変換（後方互換性のため残す）
-  Map<String, dynamic> toJson() => toFirestore();
-
-  /// JSONから復元（後方互換性のため残す）
-  factory NotificationSettings.fromJson(Map<String, dynamic> json) => NotificationSettings.fromFirestore(json);
-
   /// コピーを作成
   NotificationSettings copyWith({
-    int? morningHour,
-    int? eveningHour,
     bool? morningEnabled,
+    int? morningHour,
     bool? eveningEnabled,
+    int? eveningHour,
   }) {
     return NotificationSettings(
-      morningHour: morningHour ?? this.morningHour,
-      eveningHour: eveningHour ?? this.eveningHour,
       morningEnabled: morningEnabled ?? this.morningEnabled,
+      morningHour: morningHour ?? this.morningHour,
       eveningEnabled: eveningEnabled ?? this.eveningEnabled,
+      eveningHour: eveningHour ?? this.eveningHour,
     );
   }
 }

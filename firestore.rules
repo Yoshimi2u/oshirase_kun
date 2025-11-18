@@ -13,6 +13,31 @@ service cloud.firestore {
                    && (!request.resource.data.keys().hasAny(['displayName']) 
                        || (request.resource.data.displayName is string 
                            && request.resource.data.displayName.size() <= 20));
+      
+      // ユーザーの設定（通知設定など）
+      match /settings/{settingId} {
+        // 読み取り: 自分の設定のみ
+        allow read: if request.auth != null && request.auth.uid == userId;
+        
+        // 書き込み: 自分の設定のみ
+        allow write: if request.auth != null 
+                     && request.auth.uid == userId
+                     && (settingId != 'notifications' 
+                         || (request.resource.data.keys().hasAll([
+                              'morningEnabled',
+                              'morningHour',
+                              'eveningEnabled',
+                              'eveningHour'
+                            ])
+                            && request.resource.data.morningEnabled is bool
+                            && request.resource.data.morningHour is int
+                            && request.resource.data.morningHour >= 0
+                            && request.resource.data.morningHour <= 23
+                            && request.resource.data.eveningEnabled is bool
+                            && request.resource.data.eveningHour is int
+                            && request.resource.data.eveningHour >= 0
+                            && request.resource.data.eveningHour <= 23));
+      }
     }
     
     // ユーザーごとの予定データ

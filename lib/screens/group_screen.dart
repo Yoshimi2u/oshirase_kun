@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/group.dart';
 import '../providers/group_provider.dart';
+import '../utils/toast_utils.dart';
 
 /// グループ管理管理画面
 class GroupScreen extends ConsumerWidget {
@@ -160,20 +161,13 @@ class GroupScreen extends ConsumerWidget {
               return TextButton(
                 onPressed: () async {
                   if (nameController.text.trim().isEmpty) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('グループ名を入力してください')),
-                    );
+                    ToastUtils.showError('グループ名を入力してください');
                     return;
                   }
 
                   final user = FirebaseAuth.instance.currentUser;
                   if (user == null) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('ユーザーがログインしていません'),
-                        backgroundColor: Colors.red,
-                      ),
-                    );
+                    ToastUtils.showError('ユーザーがログインしていません');
                     return;
                   }
 
@@ -188,23 +182,13 @@ class GroupScreen extends ConsumerWidget {
                       if (group != null) {
                         _showInviteCodeDialog(context, group);
                       } else {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('グループの作成に失敗しました'),
-                            backgroundColor: Colors.red,
-                          ),
-                        );
+                        ToastUtils.showError('グループの作成に失敗しました');
                       }
                     }
                   } catch (e) {
                     if (context.mounted) {
                       Navigator.pop(context);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('エラー: $e'),
-                          backgroundColor: Colors.red,
-                        ),
-                      );
+                      ToastUtils.showError('グループの作成に失敗しました');
                     }
                   }
                 },
@@ -256,9 +240,7 @@ class GroupScreen extends ConsumerWidget {
           TextButton(
             onPressed: () {
               Clipboard.setData(ClipboardData(text: group.inviteCode));
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('招待コードをコピーしました')),
-              );
+              ToastUtils.showSuccess('招待コードをコピーしました');
             },
             child: const Text('コピー'),
           ),
@@ -302,20 +284,13 @@ class GroupScreen extends ConsumerWidget {
                   final code = codeController.text.trim().toUpperCase();
 
                   if (code.isEmpty || code.length != 6) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('6桁の招待コードを入力してください')),
-                    );
+                    ToastUtils.showError('6桁の招待コードを入力してください');
                     return;
                   }
 
                   final user = FirebaseAuth.instance.currentUser;
                   if (user == null) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('ユーザーがログインしていません'),
-                        backgroundColor: Colors.red,
-                      ),
-                    );
+                    ToastUtils.showError('ユーザーがログインしていません');
                     return;
                   }
 
@@ -328,27 +303,15 @@ class GroupScreen extends ConsumerWidget {
                     if (context.mounted) {
                       Navigator.pop(context);
                       if (group != null) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('「${group.name}」に参加しました')),
-                        );
+                        ToastUtils.showSuccess('「${group.name}」に参加しました');
                       } else {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('グループへの参加に失敗しました'),
-                            backgroundColor: Colors.red,
-                          ),
-                        );
+                        ToastUtils.showError('グループへの参加に失敗しました');
                       }
                     }
                   } catch (e) {
                     if (context.mounted) {
                       Navigator.pop(context);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('エラー: $e'),
-                          backgroundColor: Colors.red,
-                        ),
-                      );
+                      ToastUtils.showError('グループへの参加に失敗しました');
                     }
                   }
                 },
@@ -450,9 +413,7 @@ class _GroupCard extends ConsumerWidget {
                   InkWell(
                     onTap: () {
                       Clipboard.setData(ClipboardData(text: group.inviteCode));
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('招待コードをコピーしました')),
-                      );
+                      ToastUtils.showSuccess('招待コードをコピーしました');
                     },
                     child: Container(
                       padding: const EdgeInsets.all(4),
@@ -490,11 +451,7 @@ class _GroupCard extends ConsumerWidget {
               title: const Text('グループから退出'),
               onTap: () async {
                 if (isOwner) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('オーナーは退出できません。グループを削除してください。'),
-                    ),
-                  );
+                  ToastUtils.showError('オーナーは退出できません。グループを削除してください。');
                   return;
                 }
 
@@ -523,9 +480,7 @@ class _GroupCard extends ConsumerWidget {
                   if (context.mounted) {
                     Navigator.pop(context);
                     if (success) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('グループから退出しました')),
-                      );
+                      ToastUtils.showSuccess('グループから退出しました');
                     }
                   }
                 }
@@ -561,9 +516,7 @@ class _GroupCard extends ConsumerWidget {
                     if (context.mounted) {
                       Navigator.pop(context);
                       if (success) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('グループを削除しました')),
-                        );
+                        ToastUtils.showSuccess('グループを削除しました');
                       }
                     }
                   }

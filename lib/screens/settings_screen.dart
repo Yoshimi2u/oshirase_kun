@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../models/notification_settings.dart';
 import '../providers/notification_settings_provider.dart';
 import '../providers/user_profile_provider.dart';
+import '../utils/toast_utils.dart';
 
 /// 設定画面
 class SettingsScreen extends ConsumerWidget {
@@ -88,7 +89,7 @@ class SettingsScreen extends ConsumerWidget {
               SwitchListTile(
                 value: settings.morningEnabled,
                 onChanged: (value) {
-                  ref.read(notificationSettingsProvider.notifier).toggleMorningEnabled(value);
+                  ref.read(notificationSettingsNotifierProvider.notifier).toggleMorningEnabled(value);
                 },
                 title: const Text(
                   '朝の通知',
@@ -124,7 +125,7 @@ class SettingsScreen extends ConsumerWidget {
               SwitchListTile(
                 value: settings.eveningEnabled,
                 onChanged: (value) {
-                  ref.read(notificationSettingsProvider.notifier).toggleEveningEnabled(value);
+                  ref.read(notificationSettingsNotifierProvider.notifier).toggleEveningEnabled(value);
                 },
                 title: const Text(
                   '夜の通知',
@@ -176,7 +177,7 @@ class SettingsScreen extends ConsumerWidget {
     );
 
     if (picked != null) {
-      await ref.read(notificationSettingsProvider.notifier).updateMorningHour(picked);
+      await ref.read(notificationSettingsNotifierProvider.notifier).updateMorningHour(picked);
     }
   }
 
@@ -188,7 +189,7 @@ class SettingsScreen extends ConsumerWidget {
     );
 
     if (picked != null) {
-      await ref.read(notificationSettingsProvider.notifier).updateEveningHour(picked);
+      await ref.read(notificationSettingsNotifierProvider.notifier).updateEveningHour(picked);
     }
   }
 
@@ -203,21 +204,11 @@ class SettingsScreen extends ConsumerWidget {
       try {
         await ref.read(userProfileNotifierProvider.notifier).updateDisplayName(newName);
         if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('ユーザー名を更新しました'),
-              backgroundColor: Colors.green,
-            ),
-          );
+          ToastUtils.showSuccess('ユーザー名を更新しました');
         }
       } catch (e) {
         if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('エラー: $e'),
-              backgroundColor: Colors.red,
-            ),
-          );
+          ToastUtils.showError('更新に失敗しました');
         }
       }
     }

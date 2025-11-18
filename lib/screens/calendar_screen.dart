@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import '../models/schedule.dart';
 import '../providers/schedule_provider.dart';
 import '../providers/group_provider.dart';
+import '../utils/toast_utils.dart';
 
 /// カレンダー画面
 class CalendarScreen extends ConsumerStatefulWidget {
@@ -331,9 +332,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                 onPressed: () async {
                   await ref.read(scheduleNotifierProvider.notifier).completeSchedule(schedule);
                   if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('タスクを完了しました')),
-                    );
+                    ToastUtils.showSuccess('タスクを完了しました');
                   }
                 },
               )
