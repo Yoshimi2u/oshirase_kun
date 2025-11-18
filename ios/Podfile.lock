@@ -1352,7 +1352,7 @@ PODS:
     - GoogleUtilities/Environment (~> 8.1)
     - GTMSessionFetcher/Core (< 5.0, >= 3.4)
   - Flutter (1.0.0)
-  - flutter_local_notifications (0.0.1):
+  - fluttertoast (0.0.2):
     - Flutter
   - Google-Mobile-Ads-SDK (12.2.0):
     - GoogleUserMessagingPlatform (>= 1.1)
@@ -1543,7 +1543,7 @@ DEPENDENCIES:
   - firebase_remote_config (from `.symlinks/plugins/firebase_remote_config/ios`)
   - firebase_storage (from `.symlinks/plugins/firebase_storage/ios`)
   - Flutter (from `Flutter`)
-  - flutter_local_notifications (from `.symlinks/plugins/flutter_local_notifications/ios`)
+  - fluttertoast (from `.symlinks/plugins/fluttertoast/ios`)
   - google_mobile_ads (from `.symlinks/plugins/google_mobile_ads/ios`)
   - package_info_plus (from `.symlinks/plugins/package_info_plus/ios`)
   - path_provider_foundation (from `.symlinks/plugins/path_provider_foundation/darwin`)
@@ -1609,8 +1609,8 @@ EXTERNAL SOURCES:
     :path: ".symlinks/plugins/firebase_storage/ios"
   Flutter:
     :path: Flutter
-  flutter_local_notifications:
-    :path: ".symlinks/plugins/flutter_local_notifications/ios"
+  fluttertoast:
+    :path: ".symlinks/plugins/fluttertoast/ios"
   google_mobile_ads:
     :path: ".symlinks/plugins/google_mobile_ads/ios"
   package_info_plus:
@@ -1656,7 +1656,7 @@ SPEC CHECKSUMS:
   FirebaseSharedSwift: e17c654ef1f1a616b0b33054e663ad1035c8fd40
   FirebaseStorage: 50fc9ee147392943e492467db6b52759b0447037
   Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
-  flutter_local_notifications: 395056b3175ba4f08480a7c5de30cd36d69827e4
+  fluttertoast: 2c67e14dce98bbdb200df9e1acf610d7a6264ea1
   Google-Mobile-Ads-SDK: 1dfb0c3cb46c7e2b00b0f4de74a1e06d9ea25d67
   google_mobile_ads: 535223588a6791b7a3cc3513a1bc7b89d12f3e62
   GoogleAdsOnDeviceConversion: 2be6297a4f048459e0ae17fad9bfd2844e10cf64

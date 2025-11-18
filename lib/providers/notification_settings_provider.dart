@@ -1,28 +1,28 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import '../models/notification_settings.dart';
 import '../repositories/notification_settings_repository.dart';
+import 'schedule_provider.dart'; // currentUserIdProviderをインポート
 
 /// 通知設定リポジトリのプロバイダー
 final notificationSettingsRepositoryProvider = Provider<NotificationSettingsRepository>((ref) {
   return NotificationSettingsRepository();
 });
 
-/// 現在のユーザーIDプロバイダー（通知設定用）
-final _currentUserIdProvider = Provider<String?>((ref) {
-  return FirebaseAuth.instance.currentUser?.uid;
-});
-
 /// 通知設定のStreamProvider
 final notificationSettingsProvider = StreamProvider<NotificationSettings>((ref) {
-  final userId = ref.watch(_currentUserIdProvider);
+  final userIdAsync = ref.watch(currentUserIdProvider);
   final repository = ref.watch(notificationSettingsRepositoryProvider);
 
-  if (userId == null) {
-    return Stream.value(NotificationSettings.defaultSettings());
-  }
-
-  return repository.watchSettings(userId);
+  return userIdAsync.when(
+    data: (userId) {
+      if (userId == null) {
+        return Stream.value(NotificationSettings.defaultSettings());
+      }
+      return repository.watchSettings(userId);
+    },
+    loading: () => Stream.value(NotificationSettings.defaultSettings()),
+    error: (_, __) => Stream.value(NotificationSettings.defaultSettings()),
+  );
 });
 
 /// 通知設定の変更を管理するNotifier
@@ -97,6 +97,10 @@ class NotificationSettingsNotifier extends StateNotifier<AsyncValue<Notification
 final notificationSettingsNotifierProvider =
     StateNotifierProvider<NotificationSettingsNotifier, AsyncValue<NotificationSettings>>((ref) {
   final repository = ref.watch(notificationSettingsRepositoryProvider);
-  final userId = ref.watch(_currentUserIdProvider);
+  final userIdAsync = ref.watch(currentUserIdProvider);
+  final userId = userIdAsync.maybeWhen(
+    data: (id) => id,
+    orElse: () => null,
+  );
   return NotificationSettingsNotifier(repository, userId);
 });

@@ -1,6 +1,7 @@
 import {setGlobalOptions} from "firebase-functions";
 import {onSchedule} from "firebase-functions/v2/scheduler";
 import {onCall} from "firebase-functions/v2/https";
+import {onDocumentUpdated} from "firebase-functions/v2/firestore";
 import * as logger from "firebase-functions/logger";
 import * as admin from "firebase-admin";
 
@@ -208,3 +209,150 @@ export const sendTestNotification = onCall(async (request) => {
     message: `${currentHour}時の通知をテスト送信しました`,
   };
 });
+
+/**
+ * グループタスク完了時の通知
+ * グループメンバーがタスクを完了した時、他のメンバーに通知
+ */
+export const notifyGroupTaskCompletion = onDocumentUpdated(
+  {
+    document: "users/{userId}/schedules/{scheduleId}",
+    region: "asia-northeast1",
+  },
+  async (event) => {
+    const beforeData = event.data?.before.data();
+    const afterData = event.data?.after.data();
+
+    // データが存在しない場合は処理しない
+    if (!beforeData || !afterData) {
+      return;
+    }
+
+    // グループタスクでない場合は処理しない
+    if (!afterData.isGroupSchedule || !afterData.groupId) {
+      return;
+    }
+
+    // 完了状態が変更されていない場合は処理しない
+    const wasCompleted = beforeData.groupCompletedAt != null;
+    const isNowCompleted = afterData.groupCompletedAt != null;
+
+    if (wasCompleted || !isNowCompleted) {
+      return;
+    }
+
+    // 完了したメンバーIDを取得
+    const completedByMemberId = afterData.completedByMemberId;
+    if (!completedByMemberId) {
+      return;
+    }
+
+    const groupId = afterData.groupId;
+    const scheduleTitle = afterData.title || "タスク";
+
+    try {
+      const db = admin.firestore();
+      const messaging = admin.messaging();
+
+      // グループ情報を取得
+      const groupDoc = await db.collection("groups").doc(groupId).get();
+      if (!groupDoc.exists) {
+        logger.warn(`グループが見つかりません: ${groupId}`);
+        return;
+      }
+
+      const groupData = groupDoc.data();
+      const groupName = groupData?.name || "グループ";
+      const memberIds = groupData?.memberIds || [];
+
+      // 完了したメンバーの情報を取得
+      const completedByUserDoc = await db
+        .collection("users")
+        .doc(completedByMemberId)
+        .get();
+      const completedByUserName =
+        completedByUserDoc.data()?.displayName || "メンバー";
+
+      // 完了したメンバー以外に通知
+      const otherMemberIds = memberIds.filter(
+        (id: string) => id !== completedByMemberId
+      );
+
+      logger.info(
+        // eslint-disable-next-line max-len
+        `グループタスク完了通知: ${groupName} - ${scheduleTitle} by ${completedByUserName}`
+      );
+
+      // 各メンバーに通知を送信
+      const notificationPromises = otherMemberIds.map(
+        async (memberId: string) => {
+          try {
+            // メンバーのFCMトークンを取得
+            const memberDoc = await db.collection("users").doc(memberId).get();
+            const fcmToken = memberDoc.data()?.fcmToken;
+
+            if (!fcmToken) {
+              logger.warn(`[${memberId}] FCMトークンが見つかりません`);
+              return;
+            }
+
+            // 通知を送信
+            await messaging.send({
+              token: fcmToken,
+              notification: {
+                title: `${groupName} - タスク完了`,
+                body: `${completedByUserName}さんが「${scheduleTitle}」を完了しました`,
+              },
+              data: {
+                type: "group_task_completion",
+                groupId: groupId,
+                scheduleId: event.params.scheduleId,
+                completedByMemberId: completedByMemberId,
+                completedByUserName: completedByUserName,
+                scheduleTitle: scheduleTitle,
+              },
+              android: {
+                priority: "high",
+                notification: {
+                  channelId: "group_notification_channel",
+                  priority: "high",
+                },
+              },
+              apns: {
+                payload: {
+                  aps: {
+                    sound: "default",
+                  },
+                },
+              },
+            });
+
+            logger.info(
+              `[${memberId}] グループタスク完了通知送信成功: ${scheduleTitle}`
+            );
+          } catch (error) {
+            const errorCode = (error as {code?: string}).code;
+            if (
+              errorCode === "messaging/invalid-registration-token" ||
+              errorCode === "messaging/registration-token-not-registered"
+            ) {
+              logger.warn(`[${memberId}] 無効なFCMトークンを削除`);
+              await db.collection("users").doc(memberId).update({
+                fcmToken: admin.firestore.FieldValue.delete(),
+              });
+            } else {
+              logger.error(`[${memberId}] 通知送信エラー:`, error);
+            }
+          }
+        }
+      );
+
+      await Promise.all(notificationPromises);
+      logger.info(
+        `グループタスク完了通知処理完了: ${otherMemberIds.length}人に送信`
+      );
+    } catch (error) {
+      logger.error("グループタスク完了通知エラー:", error);
+    }
+  }
+);

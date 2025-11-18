@@ -1,0 +1,10 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    // デフォルト: 認証済みユーザーのみアクセス可能
+    match /{allPaths=**} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}

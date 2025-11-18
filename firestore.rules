@@ -38,6 +38,18 @@ service cloud.firestore {
                             && request.resource.data.eveningHour >= 0
                             && request.resource.data.eveningHour <= 23));
       }
+      
+      // バックアップメタデータ
+      match /backups/{backupId} {
+        // 読み取り: 自分のバックアップのみ
+        allow read: if request.auth != null && request.auth.uid == userId;
+        
+        // 作成: 自分のバックアップのみ
+        allow create: if request.auth != null && request.auth.uid == userId;
+        
+        // 削除: 自分のバックアップのみ
+        allow delete: if request.auth != null && request.auth.uid == userId;
+      }
     }
     
     // ユーザーごとの予定データ

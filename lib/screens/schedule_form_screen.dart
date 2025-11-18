@@ -9,8 +9,9 @@ import '../utils/toast_utils.dart';
 /// 予定登録・編集画面
 class ScheduleFormScreen extends ConsumerStatefulWidget {
   final String? scheduleId;
+  final DateTime? initialDate;
 
-  const ScheduleFormScreen({this.scheduleId, super.key});
+  const ScheduleFormScreen({this.scheduleId, this.initialDate, super.key});
 
   @override
   ConsumerState<ScheduleFormScreen> createState() => _ScheduleFormScreenState();
@@ -34,12 +35,21 @@ class _ScheduleFormScreenState extends ConsumerState<ScheduleFormScreen> {
   @override
   void initState() {
     super.initState();
+    // initialDateが指定されている場合は、それを開始日として設定
+    if (widget.initialDate != null) {
+      _startDate = widget.initialDate!;
+    }
     _loadSchedule();
   }
 
   Future<void> _loadSchedule() async {
     if (widget.scheduleId != null) {
-      final userId = ref.read(currentUserIdProvider);
+      final userIdAsync = ref.read(currentUserIdProvider);
+      final userId = userIdAsync.maybeWhen(
+        data: (id) => id,
+        orElse: () => null,
+      );
+
       if (userId != null) {
         final repository = ref.read(scheduleRepositoryProvider);
         final schedule = await repository.getSchedule(userId, widget.scheduleId!);
@@ -47,7 +57,10 @@ class _ScheduleFormScreenState extends ConsumerState<ScheduleFormScreen> {
           setState(() {
             _titleController.text = schedule.title;
             _descriptionController.text = schedule.description;
-            _startDate = schedule.startDate ?? DateTime.now();
+            // initialDateが指定されていない場合のみ、既存データの開始日を使用
+            if (widget.initialDate == null) {
+              _startDate = schedule.startDate ?? DateTime.now();
+            }
             _repeatType = schedule.repeatType;
             _customDays = schedule.repeatInterval ?? 1;
             _requiresCompletion = schedule.requiresCompletion;
@@ -90,7 +103,12 @@ class _ScheduleFormScreenState extends ConsumerState<ScheduleFormScreen> {
       nextScheduledDate = _startDate;
     } else {
       // 編集時は既存のスケジュールから取得
-      final userId = ref.read(currentUserIdProvider);
+      final userIdAsync = ref.read(currentUserIdProvider);
+      final userId = userIdAsync.maybeWhen(
+        data: (id) => id,
+        orElse: () => null,
+      );
+
       if (userId != null) {
         final repository = ref.read(scheduleRepositoryProvider);
         final existingSchedule = await repository.getSchedule(userId, widget.scheduleId!);
@@ -101,13 +119,17 @@ class _ScheduleFormScreenState extends ConsumerState<ScheduleFormScreen> {
           completionHistory = existingSchedule.completionHistory;
           isActive = existingSchedule.isActive;
 
-          // 繰り返し設定が変更されたかチェック
+          // 繰り返し設定または開始日が変更されたかチェック
           final repeatTypeChanged = existingSchedule.repeatType != _repeatType;
           final repeatIntervalChanged =
               _repeatType == RepeatType.custom && existingSchedule.repeatInterval != _customDays;
+          final startDateChanged = existingSchedule.startDate == null ||
+              existingSchedule.startDate!.year != _startDate.year ||
+              existingSchedule.startDate!.month != _startDate.month ||
+              existingSchedule.startDate!.day != _startDate.day;
 
-          if (repeatTypeChanged || repeatIntervalChanged) {
-            // 繰り返し設定が変更された場合はstartDateにリセット
+          if (repeatTypeChanged || repeatIntervalChanged || startDateChanged) {
+            // 繰り返し設定または開始日が変更された場合はstartDateにリセット
             nextScheduledDate = _startDate;
           } else {
             // 変更されていない場合は既存の値を保持
@@ -280,9 +302,18 @@ class _ScheduleFormScreenState extends ConsumerState<ScheduleFormScreen> {
                             padding: EdgeInsets.all(16.0),
                             child: Center(child: CircularProgressIndicator()),
                           ),
-                          error: (error, stack) => Padding(
-                            padding: const EdgeInsets.all(16.0),
-                            child: Text('グループの読み込みに失敗しました: $error'),
+                          error: (error, stack) => const Padding(
+                            padding: EdgeInsets.all(16.0),
+                            child: Column(
+                              children: [
+                                Icon(Icons.error_outline, color: Colors.red, size: 32),
+                                SizedBox(height: 8),
+                                Text(
+                                  'グループの読み込みに失敗しました',
+                                  style: TextStyle(color: Colors.grey),
+                                ),
+                              ],
+                            ),
                           ),
                           data: (groups) {
                             if (groups.isEmpty) {

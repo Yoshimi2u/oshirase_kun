@@ -6,6 +6,7 @@ import 'screens/schedule_form_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/calendar_screen.dart';
 import 'screens/group_screen.dart';
+import 'screens/account_screen.dart';
 
 // Firebase Analyticsでページ遷移を追跡するNavigatorObserver
 class AnalyticsRouteObserver extends NavigatorObserver {
@@ -46,6 +47,7 @@ class AnalyticsRouteObserver extends NavigatorObserver {
       '/calendar': 'カレンダー',
       '/settings': '設定',
       '/groups': 'グループ管理',
+      '/account': 'アカウント設定',
     };
 
     // パラメータ付きのルートを処理
@@ -79,8 +81,17 @@ final GoRouter router = GoRouter(
       path: '/schedule/edit/:id',
       pageBuilder: (context, state) {
         final id = state.pathParameters['id'];
+        final initialDateStr = state.uri.queryParameters['initialDate'];
+        DateTime? initialDate;
+        if (initialDateStr != null) {
+          try {
+            initialDate = DateTime.parse(initialDateStr);
+          } catch (e) {
+            // パース失敗時はnullのまま
+          }
+        }
         return _buildPageWithAnimation(
-          ScheduleFormScreen(scheduleId: id),
+          ScheduleFormScreen(scheduleId: id, initialDate: initialDate),
         );
       },
     ),
@@ -100,6 +111,12 @@ final GoRouter router = GoRouter(
       path: '/groups',
       pageBuilder: (context, state) => _buildPageWithAnimation(
         const GroupScreen(),
+      ),
+    ),
+    GoRoute(
+      path: '/account',
+      pageBuilder: (context, state) => _buildPageWithAnimation(
+        const AccountScreen(),
       ),
     ),
   ],

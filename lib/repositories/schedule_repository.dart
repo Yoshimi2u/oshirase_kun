@@ -175,18 +175,6 @@ class ScheduleRepository {
     }
   }
 
-  /// 予定のアクティブ状態を切り替え
-  Future<void> toggleScheduleActive(String userId, String scheduleId, bool isActive) async {
-    try {
-      await _getCollection(userId).doc(scheduleId).update({
-        'isActive': isActive,
-        'updatedAt': Timestamp.now(),
-      });
-    } catch (e) {
-      throw Exception('予定の状態変更に失敗しました: $e');
-    }
-  }
-
   /// 予定を完了する
   Future<void> completeSchedule(String userId, Schedule schedule) async {
     try {

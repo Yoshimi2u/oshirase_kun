@@ -8,76 +8,115 @@ final scheduleRepositoryProvider = Provider<ScheduleRepository>((ref) {
   return ScheduleRepository();
 });
 
-/// 現在のユーザーIDを取得するプロバイダー
-final currentUserIdProvider = Provider<String?>((ref) {
-  final user = FirebaseAuth.instance.currentUser;
-  return user?.uid;
+/// 現在のユーザーIDを取得するStreamProvider（認証状態の変更を監視）
+final currentUserIdProvider = StreamProvider<String?>((ref) {
+  return FirebaseAuth.instance.authStateChanges().map((user) => user?.uid);
 });
 
 /// すべての予定を取得するStreamProvider
 final schedulesStreamProvider = StreamProvider.autoDispose<List<Schedule>>((ref) {
-  final userId = ref.watch(currentUserIdProvider);
-  if (userId == null) {
-    return Stream.value([]);
-  }
-  final repository = ref.watch(scheduleRepositoryProvider);
-  return repository.getSchedulesStream(userId);
+  final userIdAsync = ref.watch(currentUserIdProvider);
+  return userIdAsync.when(
+    data: (userId) {
+      if (userId == null) {
+        return Stream.value([]);
+      }
+      final repository = ref.watch(scheduleRepositoryProvider);
+      return repository.getSchedulesStream(userId);
+    },
+    loading: () => Stream.value([]),
+    error: (_, __) => Stream.value([]),
+  );
 });
 
 /// 今日のタスクを取得するStreamProvider
 final todaySchedulesStreamProvider = StreamProvider.autoDispose<List<Schedule>>((ref) {
-  final userId = ref.watch(currentUserIdProvider);
-  if (userId == null) {
-    return Stream.value([]);
-  }
-  final repository = ref.watch(scheduleRepositoryProvider);
-  return repository.getTodaySchedulesStream(userId);
+  final userIdAsync = ref.watch(currentUserIdProvider);
+  return userIdAsync.when(
+    data: (userId) {
+      if (userId == null) {
+        return Stream.value([]);
+      }
+      final repository = ref.watch(scheduleRepositoryProvider);
+      return repository.getTodaySchedulesStream(userId);
+    },
+    loading: () => Stream.value([]),
+    error: (_, __) => Stream.value([]),
+  );
 });
 
 /// 遅延タスクを取得するStreamProvider
 final overdueSchedulesStreamProvider = StreamProvider.autoDispose<List<Schedule>>((ref) {
-  final userId = ref.watch(currentUserIdProvider);
-  if (userId == null) {
-    return Stream.value([]);
-  }
-  final repository = ref.watch(scheduleRepositoryProvider);
-  return repository.getOverdueSchedulesStream(userId);
+  final userIdAsync = ref.watch(currentUserIdProvider);
+  return userIdAsync.when(
+    data: (userId) {
+      if (userId == null) {
+        return Stream.value([]);
+      }
+      final repository = ref.watch(scheduleRepositoryProvider);
+      return repository.getOverdueSchedulesStream(userId);
+    },
+    loading: () => Stream.value([]),
+    error: (_, __) => Stream.value([]),
+  );
 });
 
 /// 今日以降のタスクを取得するStreamProvider
 final upcomingSchedulesStreamProvider = StreamProvider.autoDispose<List<Schedule>>((ref) {
-  final userId = ref.watch(currentUserIdProvider);
-  if (userId == null) {
-    return Stream.value([]);
-  }
-  final repository = ref.watch(scheduleRepositoryProvider);
-  return repository.getUpcomingSchedulesStream(userId);
+  final userIdAsync = ref.watch(currentUserIdProvider);
+  return userIdAsync.when(
+    data: (userId) {
+      if (userId == null) {
+        return Stream.value([]);
+      }
+      final repository = ref.watch(scheduleRepositoryProvider);
+      return repository.getUpcomingSchedulesStream(userId);
+    },
+    loading: () => Stream.value([]),
+    error: (_, __) => Stream.value([]),
+  );
 });
 
 /// 今日完了したタスクを取得するStreamProvider
 final todayCompletedSchedulesStreamProvider = StreamProvider.autoDispose<List<Schedule>>((ref) {
-  final userId = ref.watch(currentUserIdProvider);
-  if (userId == null) {
-    return Stream.value([]);
-  }
-  final repository = ref.watch(scheduleRepositoryProvider);
-  return repository.getTodayCompletedSchedulesStream(userId);
+  final userIdAsync = ref.watch(currentUserIdProvider);
+  return userIdAsync.when(
+    data: (userId) {
+      if (userId == null) {
+        return Stream.value([]);
+      }
+      final repository = ref.watch(scheduleRepositoryProvider);
+      return repository.getTodayCompletedSchedulesStream(userId);
+    },
+    loading: () => Stream.value([]),
+    error: (_, __) => Stream.value([]),
+  );
 });
 
 /// アクティブな予定のみを取得するStreamProvider
 final activeSchedulesStreamProvider = StreamProvider.autoDispose<List<Schedule>>((ref) {
-  final userId = ref.watch(currentUserIdProvider);
-  if (userId == null) {
-    return Stream.value([]);
-  }
-  final repository = ref.watch(scheduleRepositoryProvider);
-  return repository.getActiveSchedulesStream(userId);
+  final userIdAsync = ref.watch(currentUserIdProvider);
+  return userIdAsync.when(
+    data: (userId) {
+      if (userId == null) {
+        return Stream.value([]);
+      }
+      final repository = ref.watch(scheduleRepositoryProvider);
+      return repository.getActiveSchedulesStream(userId);
+    },
+    loading: () => Stream.value([]),
+    error: (_, __) => Stream.value([]),
+  );
 });
 
 /// 予定の作成・更新・削除を管理するStateNotifierProvider
 final scheduleNotifierProvider = StateNotifierProvider<ScheduleNotifier, AsyncValue<void>>((ref) {
   final repository = ref.watch(scheduleRepositoryProvider);
-  final userId = ref.watch(currentUserIdProvider);
+  final userIdAsync = ref.watch(currentUserIdProvider);
+  final userId = userIdAsync.maybeWhen(
+    data: (id) => id,
+    orElse: () => null,
+  );
   return ScheduleNotifier(repository, userId);
 });
 
@@ -156,23 +195,6 @@ class ScheduleNotifier extends StateNotifier<AsyncValue<void>> {
     state = const AsyncValue.loading();
     try {
       await _repository.completeSchedule(_userId!, schedule);
-
-      state = const AsyncValue.data(null);
-    } catch (e, st) {
-      state = AsyncValue.error(e, st);
-    }
-  }
-
-  /// 予定のアクティブ状態を切り替え
-  Future<void> toggleActive(String scheduleId, bool isActive) async {
-    if (_userId == null) {
-      state = AsyncValue.error('ユーザーが認証されていません', StackTrace.current);
-      return;
-    }
-
-    state = const AsyncValue.loading();
-    try {
-      await _repository.toggleScheduleActive(_userId!, scheduleId, isActive);
 
       state = const AsyncValue.data(null);
     } catch (e, st) {

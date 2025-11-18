@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/group.dart';
 import '../providers/group_provider.dart';
 import '../utils/toast_utils.dart';
@@ -26,9 +27,17 @@ class GroupScreen extends ConsumerWidget {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(Icons.error_outline, size: 48, color: Colors.red),
+              const Icon(Icons.error_outline, size: 64, color: Colors.red),
               const SizedBox(height: 16),
-              Text('エラーが発生しました\n$error'),
+              const Text(
+                'エラーが発生しました',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'グループの読み込みに失敗しました',
+                style: TextStyle(color: Colors.grey),
+              ),
             ],
           ),
         ),
@@ -90,7 +99,7 @@ class GroupScreen extends ConsumerWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).brightness == Brightness.dark ? const Color(0xFF2C2C2C) : Colors.white,
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.05),
@@ -108,7 +117,13 @@ class GroupScreen extends ConsumerWidget {
               child: ElevatedButton.icon(
                 onPressed: () => _showCreateGroupDialog(context),
                 icon: const Icon(Icons.add),
-                label: const Text('新しいグループを作成'),
+                label: const Text(
+                  '新しいグループを作成',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.blue,
                   foregroundColor: Colors.white,
@@ -122,9 +137,19 @@ class GroupScreen extends ConsumerWidget {
               child: OutlinedButton.icon(
                 onPressed: () => _showJoinGroupDialog(context),
                 icon: const Icon(Icons.login),
-                label: const Text('招待コードで参加'),
+                label: Text(
+                  '招待コードで参加',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: Theme.of(context).brightness == Brightness.dark ? Colors.white : Colors.blue,
+                  ),
+                ),
                 style: OutlinedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 14),
+                  side: BorderSide(
+                    color: Theme.of(context).brightness == Brightness.dark ? Colors.white70 : Colors.blue,
+                  ),
                 ),
               ),
             ),
@@ -220,19 +245,23 @@ class GroupScreen extends ConsumerWidget {
               ),
               child: Text(
                 group.inviteCode,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 32,
                   fontWeight: FontWeight.bold,
                   letterSpacing: 4,
-                  color: Colors.blue,
+                  color: Theme.of(context).brightness == Brightness.dark ? Colors.blue[300] : Colors.blue[700],
                 ),
               ),
             ),
             const SizedBox(height: 16),
-            const Text(
+            Text(
               'メンバーにこのコードを共有してください',
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 12, color: Colors.grey),
+              style: TextStyle(
+                fontSize: 12,
+                color: Theme.of(context).brightness == Brightness.dark ? Colors.grey[300] : Colors.grey[700],
+                fontWeight: FontWeight.w500,
+              ),
             ),
           ],
         ),
@@ -373,7 +402,9 @@ class _GroupCard extends ConsumerWidget {
                           'メンバー: ${group.memberCount}人',
                           style: TextStyle(
                             fontSize: 14,
-                            color: Colors.grey[600],
+                            color:
+                                Theme.of(context).brightness == Brightness.dark ? Colors.blue[300] : Colors.blue[700],
+                            fontWeight: FontWeight.w500,
                           ),
                         ),
                       ],
@@ -406,7 +437,8 @@ class _GroupCard extends ConsumerWidget {
                     '招待コード: ${group.inviteCode}',
                     style: TextStyle(
                       fontSize: 12,
-                      color: Colors.grey[600],
+                      color: Theme.of(context).brightness == Brightness.dark ? Colors.blue[300] : Colors.blue[700],
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -443,9 +475,23 @@ class _GroupCard extends ConsumerWidget {
             ListTile(
               leading: const Icon(Icons.group),
               title: Text(group.name),
-              subtitle: Text('メンバー: ${group.memberCount}人'),
+              subtitle: Text(
+                'メンバー: ${group.memberCount}人',
+                style: TextStyle(
+                  color: Theme.of(context).brightness == Brightness.dark ? Colors.blue[300] : Colors.blue[700],
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
             ),
             const Divider(),
+            ListTile(
+              leading: const Icon(Icons.people),
+              title: const Text('メンバー一覧'),
+              onTap: () {
+                Navigator.pop(context);
+                _showMembersList(context, ref);
+              },
+            ),
             ListTile(
               leading: const Icon(Icons.exit_to_app),
               title: const Text('グループから退出'),
@@ -523,6 +569,95 @@ class _GroupCard extends ConsumerWidget {
                 },
               ),
           ],
+        ),
+      ),
+    );
+  }
+
+  /// メンバー一覧を表示
+  void _showMembersList(BuildContext context, WidgetRef ref) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.7,
+        minChildSize: 0.5,
+        maxChildSize: 0.95,
+        expand: false,
+        builder: (context, scrollController) => SafeArea(
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    const Icon(Icons.people),
+                    const SizedBox(width: 8),
+                    Text(
+                      'メンバー一覧 (${group.memberCount}人)',
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(height: 1),
+              Expanded(
+                child: ListView.builder(
+                  controller: scrollController,
+                  itemCount: group.memberIds.length,
+                  itemBuilder: (context, index) {
+                    final memberId = group.memberIds[index];
+                    final isOwner = memberId == group.ownerId;
+
+                    return FutureBuilder<Map<String, dynamic>?>(
+                      future:
+                          FirebaseFirestore.instance.collection('users').doc(memberId).get().then((doc) => doc.data()),
+                      builder: (context, snapshot) {
+                        final displayName = snapshot.data?['displayName'] as String? ?? 'ユーザー';
+                        final email = snapshot.data?['email'] as String? ?? '';
+
+                        return ListTile(
+                          leading: CircleAvatar(
+                            backgroundColor: isOwner ? Colors.orange : Colors.blue,
+                            child: Text(
+                              displayName.isNotEmpty ? displayName[0] : 'U',
+                              style: const TextStyle(color: Colors.white),
+                            ),
+                          ),
+                          title: Text(
+                            displayName,
+                            style: const TextStyle(fontWeight: FontWeight.w500),
+                          ),
+                          subtitle: email.isNotEmpty ? Text(email) : null,
+                          trailing: isOwner
+                              ? Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: Colors.orange.withOpacity(0.1),
+                                    border: Border.all(color: Colors.orange),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: const Text(
+                                    'オーナー',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.orange,
+                                    ),
+                                  ),
+                                )
+                              : null,
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

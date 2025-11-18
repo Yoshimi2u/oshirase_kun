@@ -45,6 +45,65 @@ class AuthService {
     return await _auth.signInWithEmailAndPassword(email: email, password: password);
   }
 
+  /// メールアドレスでサインイン
+  /// 既に同じメールアドレスのアカウントがある場合は、そのアカウントでサインイン
+  /// ない場合は、現在の匿名アカウントをメールアドレスアカウントにリンク
+  Future<UserCredential> signInWithEmail(String email, String password) async {
+    final currentUser = _auth.currentUser;
+
+    // 既に同じメールアドレスでサインイン済みの場合
+    if (currentUser != null && !currentUser.isAnonymous && currentUser.email == email) {
+      throw FirebaseAuthException(
+        code: 'already-signed-in',
+        message: '既にこのメールアドレスでサインイン済みです',
+      );
+    }
+
+    // 匿名ユーザーの場合、まずメールアドレスアカウントが存在するか確認
+    if (currentUser != null && currentUser.isAnonymous) {
+      try {
+        // 既存のアカウントでサインイン試行
+        final methods = await _auth.fetchSignInMethodsForEmail(email);
+
+        if (methods.isNotEmpty) {
+          // アカウントが存在する場合は、匿名データを破棄して既存アカウントでサインイン
+          await _auth.signOut();
+          return await _auth.signInWithEmailAndPassword(email: email, password: password);
+        } else {
+          // アカウントが存在しない場合は、匿名アカウントをリンク（新規登録と同じ）
+          final credential = EmailAuthProvider.credential(email: email, password: password);
+          final cred = await currentUser.linkWithCredential(credential);
+          await cred.user?.sendEmailVerification();
+          return cred;
+        }
+      } catch (e) {
+        // エラーの場合は通常のサインインを試行
+        await _auth.signOut();
+        return await _auth.signInWithEmailAndPassword(email: email, password: password);
+      }
+    }
+
+    // 匿名ユーザーでない場合は通常のサインイン
+    return await _auth.signInWithEmailAndPassword(email: email, password: password);
+  }
+
+  /// メールアドレスで新規登録（エイリアス）
+  Future<UserCredential> registerWithEmail(String email, String password) async {
+    final currentUser = _auth.currentUser;
+
+    // 匿名ユーザーの場合はリンク、そうでない場合は新規作成
+    if (currentUser != null && currentUser.isAnonymous) {
+      final credential = EmailAuthProvider.credential(email: email, password: password);
+      final cred = await currentUser.linkWithCredential(credential);
+      await cred.user?.sendEmailVerification();
+      return cred;
+    } else {
+      final cred = await _auth.createUserWithEmailAndPassword(email: email, password: password);
+      await cred.user?.sendEmailVerification();
+      return cred;
+    }
+  }
+
   Future<void> signOutAndStayAnonymous() async {
     await _auth.signOut();
     await _auth.signInAnonymously();

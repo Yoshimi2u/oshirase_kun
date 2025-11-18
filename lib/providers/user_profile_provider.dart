@@ -1,22 +1,23 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import '../models/user_profile.dart';
 import '../repositories/user_profile_repository.dart';
+import 'schedule_provider.dart'; // currentUserIdProviderをインポート
 
 /// ユーザープロフィールリポジトリのプロバイダー
 final userProfileRepositoryProvider = Provider<UserProfileRepository>((ref) {
   return UserProfileRepository();
 });
 
-/// 現在のユーザーIDプロバイダー
-final currentUserIdProvider = Provider<String?>((ref) {
-  final user = FirebaseAuth.instance.currentUser;
-  return user?.uid;
-});
-
 /// ユーザープロフィールのStreamプロバイダー（自動作成付き）
 final userProfileStreamProvider = StreamProvider.autoDispose<UserProfile?>((ref) async* {
-  final userId = ref.watch(currentUserIdProvider);
+  final userIdAsync = ref.watch(currentUserIdProvider);
+
+  final userId = await userIdAsync.when(
+    data: (id) async => id,
+    loading: () async => null,
+    error: (_, __) async => null,
+  );
+
   if (userId == null) {
     yield null;
     return;
@@ -88,6 +89,10 @@ class UserProfileNotifier extends StateNotifier<AsyncValue<UserProfile?>> {
 /// ユーザープロフィールNotifierのプロバイダー
 final userProfileNotifierProvider = StateNotifierProvider<UserProfileNotifier, AsyncValue<UserProfile?>>((ref) {
   final repository = ref.watch(userProfileRepositoryProvider);
-  final userId = ref.watch(currentUserIdProvider);
+  final userIdAsync = ref.watch(currentUserIdProvider);
+  final userId = userIdAsync.maybeWhen(
+    data: (id) => id,
+    orElse: () => null,
+  );
   return UserProfileNotifier(repository, userId);
 });

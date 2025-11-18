@@ -19,6 +19,7 @@ import 'services/analytics_service.dart';
 import 'widgets/global_loading_overlay.dart';
 import 'widgets/global_banner_ad.dart';
 import 'services/loading_service.dart';
+import 'providers/theme_provider.dart';
 
 /// バックグラウンドメッセージハンドラー（トップレベル関数として定義）
 @pragma('vm:entry-point')
@@ -123,14 +124,14 @@ void main() async {
   });
 }
 
-class MyApp extends StatefulWidget {
+class MyApp extends ConsumerStatefulWidget {
   const MyApp({super.key});
 
   @override
-  State<MyApp> createState() => _MyAppState();
+  ConsumerState<MyApp> createState() => _MyAppState();
 }
 
-class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
+class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
@@ -165,6 +166,8 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
+    final isDarkMode = ref.watch(themeModeProvider);
+
     return MaterialApp.router(
       routerConfig: router,
       title: 'お知らせ君',
@@ -177,6 +180,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       supportedLocales: const [
         Locale('ja', 'JP'),
       ],
+      themeMode: isDarkMode ? ThemeMode.dark : ThemeMode.light,
       theme: ThemeData(
         useMaterial3: true,
         colorScheme: ColorScheme.light(
@@ -185,8 +189,56 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
           primaryContainer: Colors.blue.shade100,
           secondary: Colors.green,
           onSecondary: Colors.white,
-          surface: Colors.white,
+          surface: const Color(0xFFFAFAFA),
           onSurface: Colors.black,
+          surfaceContainerHighest: Colors.white,
+          outline: Colors.grey.shade300,
+        ),
+        cardTheme: CardThemeData(
+          elevation: 1,
+          color: Colors.white,
+          shadowColor: Colors.black.withOpacity(0.1),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: BorderSide(color: Colors.grey.shade200, width: 1),
+          ),
+        ),
+        dividerTheme: DividerThemeData(
+          color: Colors.grey.shade300,
+          thickness: 1,
+        ),
+      ),
+      darkTheme: ThemeData(
+        useMaterial3: true,
+        brightness: Brightness.dark,
+        colorScheme: ColorScheme.dark(
+          primary: Colors.blue.shade300,
+          onPrimary: Colors.black,
+          primaryContainer: Colors.blue.shade700,
+          secondary: Colors.green.shade300,
+          onSecondary: Colors.black,
+          surface: const Color(0xFF1E1E1E),
+          onSurface: Colors.white,
+          surfaceContainerHighest: const Color(0xFF2C2C2C),
+          outline: Colors.grey.shade600,
+        ),
+        cardTheme: const CardThemeData(
+          elevation: 2,
+          color: Color(0xFF2C2C2C),
+        ),
+        dividerTheme: DividerThemeData(
+          color: Colors.grey.shade700,
+          thickness: 1,
+        ),
+        appBarTheme: const AppBarTheme(
+          backgroundColor: Color(0xFF1E1E1E),
+          elevation: 0,
+          iconTheme: IconThemeData(color: Colors.white),
+          titleTextStyle: TextStyle(
+            color: Colors.white,
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+          ),
         ),
       ),
       builder: (context, child) {

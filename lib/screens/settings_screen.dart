@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../models/notification_settings.dart';
 import '../providers/notification_settings_provider.dart';
 import '../providers/user_profile_provider.dart';
+import '../providers/theme_provider.dart';
 import '../utils/toast_utils.dart';
 
 /// 設定画面
@@ -23,7 +24,22 @@ class SettingsScreen extends ConsumerWidget {
       body: settingsAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (error, stack) => Center(
-          child: Text('エラーが発生しました: $error'),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.error_outline, size: 64, color: Colors.red),
+              const SizedBox(height: 16),
+              const Text(
+                'エラーが発生しました',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                '設定の読み込みに失敗しました',
+                style: TextStyle(color: Colors.grey),
+              ),
+            ],
+          ),
         ),
         data: (settings) => _buildSettingsList(context, ref, settings),
       ),
@@ -43,10 +59,10 @@ class SettingsScreen extends ConsumerWidget {
               leading: Icon(Icons.person, color: Colors.blue),
               title: Text('読み込み中...'),
             ),
-            error: (error, stack) => ListTile(
-              leading: const Icon(Icons.person, color: Colors.red),
-              title: const Text('エラー'),
-              subtitle: Text('$error'),
+            error: (error, stack) => const ListTile(
+              leading: Icon(Icons.person, color: Colors.red),
+              title: Text('エラー'),
+              subtitle: Text('ユーザー情報の読み込みに失敗しました'),
             ),
             data: (profile) => ListTile(
               leading: const Icon(Icons.person, color: Colors.blue),
@@ -78,6 +94,40 @@ class SettingsScreen extends ConsumerWidget {
             onTap: () {
               context.push('/groups');
             },
+          ),
+        ),
+
+        // アカウント設定
+        Card(
+          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: ListTile(
+            leading: const Icon(Icons.account_circle, color: Colors.blue),
+            title: const Text(
+              'アカウント設定',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            subtitle: const Text('サインイン・アカウント管理'),
+            trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+            onTap: () {
+              context.push('/account');
+            },
+          ),
+        ),
+
+        // ダークモード設定
+        Card(
+          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: SwitchListTile(
+            value: ref.watch(themeModeProvider),
+            onChanged: (value) {
+              ref.read(themeModeProvider.notifier).setThemeMode(value);
+              ToastUtils.showSuccess(value ? 'ダークモードを有効にしました' : 'ライトモードを有効にしました');
+            },
+            title: const Text(
+              'ダークモード',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            secondary: const Icon(Icons.dark_mode, color: Colors.indigo),
           ),
         ),
 

@@ -24,17 +24,35 @@ class MainActivity : FlutterActivity() {
     
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channelId = "default_channel"
-            val channelName = "お知らせ"
-            val importance = NotificationManager.IMPORTANCE_HIGH
-            val channel = NotificationChannel(channelId, channelName, importance).apply {
+            val notificationManager = getSystemService(NotificationManager::class.java)
+            
+            // デフォルトの通知チャンネル
+            val defaultChannelId = "default_channel"
+            val defaultChannelName = "お知らせ"
+            val defaultChannel = NotificationChannel(
+                defaultChannelId,
+                defaultChannelName,
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
                 description = "タスクのお知らせ通知"
                 enableVibration(true)
                 enableLights(true)
             }
+            notificationManager.createNotificationChannel(defaultChannel)
             
-            val notificationManager = getSystemService(NotificationManager::class.java)
-            notificationManager.createNotificationChannel(channel)
+            // グループタスク完了通知チャンネル
+            val groupChannelId = "group_notification_channel"
+            val groupChannelName = "グループタスク"
+            val groupChannel = NotificationChannel(
+                groupChannelId,
+                groupChannelName,
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = "グループメンバーのタスク完了通知"
+                enableVibration(true)
+                enableLights(true)
+            }
+            notificationManager.createNotificationChannel(groupChannel)
         }
     }
     
