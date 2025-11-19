@@ -25,18 +25,18 @@ class SettingsScreen extends ConsumerWidget {
       ),
       body: settingsAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, stack) => Center(
+        error: (error, stack) => const Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(Icons.error_outline, size: 64, color: Colors.red),
-              const SizedBox(height: 16),
-              const Text(
+              Icon(Icons.error_outline, size: 64, color: Colors.red),
+              SizedBox(height: 16),
+              Text(
                 'エラーが発生しました',
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               ),
-              const SizedBox(height: 8),
-              const Text(
+              SizedBox(height: 8),
+              Text(
                 '設定の読み込みに失敗しました',
                 style: TextStyle(color: Colors.grey),
               ),

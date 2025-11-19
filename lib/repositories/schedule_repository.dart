@@ -17,43 +17,25 @@ class ScheduleRepository {
 
   /// 予定を作成
   Future<String> createSchedule(String userId, Schedule schedule) async {
-    print('=== ScheduleRepository.createSchedule 開始 ===');
-    print('userId: $userId');
-    print('isGroupSchedule: ${schedule.isGroupSchedule}');
-    print('groupId: ${schedule.groupId}');
-
     try {
       // グループ予定の場合は全メンバーに作成
       if (schedule.isGroupSchedule && schedule.groupId != null) {
-        print('グループタスクとして作成開始');
         final result = await _createGroupSchedule(userId, schedule);
-        print('グループタスク作成完了: $result');
         return result;
       }
 
       // 個人予定の作成
-      print('個人タスクとして作成開始');
       final docRef = _getCollection(userId).doc();
       final scheduleWithId = schedule.copyWith(id: docRef.id);
       await docRef.set(scheduleWithId.toFirestore());
-      print('個人タスク作成完了: ${docRef.id}');
       return docRef.id;
-    } catch (e, st) {
-      print('=== ScheduleRepository.createSchedule エラー ===');
-      print('エラー: $e');
-      print('スタックトレース: $st');
+    } catch (e) {
       throw Exception('予定の作成に失敗しました: $e');
     }
   }
 
   /// グループ予定を作成（全メンバーに作成）
   Future<String> _createGroupSchedule(String userId, Schedule schedule) async {
-    print('=== グループタスク作成開始 ===');
-    print('groupId: ${schedule.groupId}');
-    print('title: ${schedule.title}');
-    print('nextScheduledDate: ${schedule.nextScheduledDate}');
-    print('requiresCompletion: ${schedule.requiresCompletion}');
-
     // グループ情報を取得
     final groupDoc = await _firestore.collection('groups').doc(schedule.groupId).get();
     if (!groupDoc.exists) {
@@ -61,13 +43,10 @@ class ScheduleRepository {
     }
 
     final group = Group.fromFirestore(groupDoc);
-    print('グループメンバー数: ${group.memberIds.length}');
-    print('メンバーID: ${group.memberIds}');
 
     // IDを生成
     final scheduleId = _getCollection(userId).doc().id;
     final scheduleWithId = schedule.copyWith(id: scheduleId);
-    print('生成されたスケジュールID: $scheduleId');
 
     // バッチ処理で全メンバーに予定を作成
     final batch = _firestore.batch();
@@ -75,14 +54,11 @@ class ScheduleRepository {
     for (final memberId in group.memberIds) {
       final memberScheduleRef = _getCollection(memberId).doc(scheduleId);
       final data = scheduleWithId.toFirestore();
-      print('メンバー $memberId にタスク作成: $data');
       batch.set(memberScheduleRef, data);
     }
 
     // バッチ実行
-    print('バッチコミット開始...');
     await batch.commit();
-    print('=== グループタスク作成完了 ===');
     return scheduleId;
   }
 
@@ -337,21 +313,11 @@ class ScheduleRepository {
     final today = DateTime(now.year, now.month, now.day);
     final tomorrow = today.add(const Duration(days: 1));
 
-    print('=== 今日のタスク取得 ===');
-    print('userId: $userId');
-    print('today: $today');
-    print('tomorrow: $tomorrow');
-
     return _getCollection(userId)
         .where('nextScheduledDate', isGreaterThanOrEqualTo: Timestamp.fromDate(today))
         .where('nextScheduledDate', isLessThan: Timestamp.fromDate(tomorrow))
         .snapshots()
         .map((snapshot) {
-      print('今日のタスク取得結果: ${snapshot.docs.length}件');
-      for (final doc in snapshot.docs) {
-        final data = doc.data() as Map<String, dynamic>;
-        print('  - ${data['title']} (isGroup: ${data['isGroupSchedule']}, nextDate: ${data['nextScheduledDate']})');
-      }
       return snapshot.docs.map((doc) => Schedule.fromFirestore(doc)).toList();
     });
   }
@@ -370,25 +336,16 @@ class ScheduleRepository {
     });
   }
 
-  /// 予定済みタスク（今日以降）を取得
+  /// 予定済みタスク(今日以降)を取得
   Stream<List<Schedule>> getUpcomingSchedulesStream(String userId) {
     final now = DateTime.now();
     final tomorrow = DateTime(now.year, now.month, now.day).add(const Duration(days: 1));
-
-    print('=== 予定一覧取得 ===');
-    print('userId: $userId');
-    print('tomorrow: $tomorrow');
 
     return _getCollection(userId)
         .where('nextScheduledDate', isGreaterThanOrEqualTo: Timestamp.fromDate(tomorrow))
         .orderBy('nextScheduledDate', descending: false)
         .snapshots()
         .map((snapshot) {
-      print('予定一覧取得結果: ${snapshot.docs.length}件');
-      for (final doc in snapshot.docs) {
-        final data = doc.data() as Map<String, dynamic>;
-        print('  - ${data['title']} (isGroup: ${data['isGroupSchedule']}, nextDate: ${data['nextScheduledDate']})');
-      }
       return snapshot.docs.map((doc) => Schedule.fromFirestore(doc)).toList();
     });
   }

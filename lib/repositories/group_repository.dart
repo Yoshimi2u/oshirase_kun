@@ -16,12 +16,8 @@ class GroupRepository {
     required String ownerId,
   }) async {
     try {
-      print('グループ作成開始: name=$name, ownerId=$ownerId');
-
       // ユニークな招待コードを生成
-      print('招待コード生成中...');
       final inviteCode = await _inviteCodeService.generateUniqueInviteCode();
-      print('招待コード生成完了: $inviteCode');
 
       final now = DateTime.now();
       final docRef = _groupsCollection.doc();
@@ -37,16 +33,11 @@ class GroupRepository {
         isActive: true,
       );
 
-      print('Firestoreに保存中...');
       final data = group.toFirestore();
-      print('保存するデータ: $data');
       await docRef.set(data);
-      print('グループ作成完了: ${group.id}');
-      print('招待コード: ${group.inviteCode}');
 
       return group;
     } catch (e) {
-      print('グループ作成エラー: $e');
       throw Exception('グループの作成に失敗しました: $e');
     }
   }
@@ -79,19 +70,15 @@ class GroupRepository {
   /// 招待コードでグループを検索
   Future<Group?> getGroupByInviteCode(String inviteCode) async {
     try {
-      print('[GroupRepository] getGroupByInviteCode開始: $inviteCode');
       final doc = await _inviteCodeService.findGroupByInviteCode(inviteCode);
 
       if (doc == null) {
-        print('[GroupRepository] グループが見つかりませんでした');
         return null;
       }
 
       final group = Group.fromFirestore(doc);
-      print('[GroupRepository] グループ取得成功: ${group.id}, name: ${group.name}, code: ${group.inviteCode}');
       return group;
     } catch (e) {
-      print('[GroupRepository] エラー: $e');
       throw Exception('グループの検索に失敗しました: $e');
     }
   }

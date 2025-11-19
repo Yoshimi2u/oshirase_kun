@@ -157,23 +157,11 @@ class _ScheduleFormScreenState extends ConsumerState<ScheduleFormScreen> {
       groupId: _isGroupSchedule ? _selectedGroupId : null,
     );
 
-    print('=== 予定保存処理開始 ===');
-    print('タイトル: ${schedule.title}');
-    print('グループ予定: ${schedule.isGroupSchedule}');
-    print('グループID: ${schedule.groupId}');
-    print('開始日: ${schedule.startDate}');
-    print('次回予定日: ${schedule.nextScheduledDate}');
-    print('完了必須: ${schedule.requiresCompletion}');
-
     try {
       if (widget.scheduleId == null) {
-        print('新規作成処理を開始...');
         await ref.read(scheduleNotifierProvider.notifier).createSchedule(schedule);
-        print('新規作成処理が完了しました');
       } else {
-        print('更新処理を開始...');
         await ref.read(scheduleNotifierProvider.notifier).updateSchedule(schedule);
-        print('更新処理が完了しました');
       }
 
       if (mounted) {
@@ -182,10 +170,7 @@ class _ScheduleFormScreenState extends ConsumerState<ScheduleFormScreen> {
         );
         context.pop();
       }
-    } catch (e, st) {
-      print('=== 予定保存処理エラー ===');
-      print('エラー: $e');
-      print('スタックトレース: $st');
+    } catch (e) {
       if (mounted) {
         ToastUtils.showError('操作に失敗しました: $e');
       }

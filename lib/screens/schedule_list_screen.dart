@@ -49,67 +49,96 @@ class _ScheduleListScreenState extends ConsumerState<ScheduleListScreen> with Si
 
   @override
   Widget build(BuildContext context) {
+    final primaryColor = Theme.of(context).colorScheme.primary;
+
     return Scaffold(
-      appBar: AppBar(
-        title: Align(
-          alignment: Alignment.centerLeft,
-          child: Text(_getActiveTabTitle()),
-        ),
-        titleSpacing: 16,
-        backgroundColor: Theme.of(context).colorScheme.primary,
-        foregroundColor: Colors.white,
-        bottom: TabBar(
-          controller: _tabController,
-          indicatorColor: Colors.white,
-          labelColor: Colors.white,
-          unselectedLabelColor: Colors.white70,
-          tabs: const [
-            Tab(text: '今日のタスク', icon: Icon(Icons.today, size: 24)),
-            Tab(text: '予定一覧', icon: Icon(Icons.list, size: 24)),
-            Tab(text: 'カレンダー', icon: Icon(Icons.calendar_month, size: 24)),
-          ],
-        ),
-        actions: [
-          // 全てのタブで予定追加ボタンを表示
-          Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: Center(
-              child: TextButton.icon(
-                icon: const Icon(Icons.add, size: 20, color: Colors.white),
-                label: const Text(
-                  '追加',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
+      body: Stack(
+        children: [
+          // ステータスバー領域の背景色
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: Container(
+              height: MediaQuery.of(context).padding.top, // SafeAreaの高さ
+              color: primaryColor,
+            ),
+          ),
+          // メインコンテンツ
+          SafeArea(
+            child: NestedScrollView(
+              headerSliverBuilder: (context, innerBoxIsScrolled) {
+                return [
+                  SliverAppBar(
+                    title: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(_getActiveTabTitle()),
+                    ),
+                    titleSpacing: 16,
+                    backgroundColor: Theme.of(context).colorScheme.primary,
+                    foregroundColor: Colors.white,
+                    floating: true, // 上スクロールで即座に表示
+                    snap: true, // 表示/非表示が滑らかに
+                    pinned: false, // 完全に隠れる
+                    forceElevated: innerBoxIsScrolled,
+                    actions: [
+                      // 全てのタブで予定追加ボタンを表示
+                      Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: Center(
+                          child: TextButton.icon(
+                            icon: const Icon(Icons.add, size: 20, color: Colors.white),
+                            label: const Text(
+                              '追加',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            style: TextButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                              minimumSize: Size.zero,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
+                            onPressed: () {
+                              context.push('/schedule/create');
+                            },
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.settings),
+                        iconSize: 22,
+                        onPressed: () {
+                          context.push('/settings');
+                        },
+                      ),
+                    ],
+                    bottom: TabBar(
+                      controller: _tabController,
+                      indicatorColor: Colors.white,
+                      labelColor: Colors.white,
+                      unselectedLabelColor: Colors.white70,
+                      tabs: const [
+                        Tab(text: '今日のタスク', icon: Icon(Icons.today, size: 24)),
+                        Tab(text: '予定一覧', icon: Icon(Icons.list, size: 24)),
+                        Tab(text: 'カレンダー', icon: Icon(Icons.calendar_month, size: 24)),
+                      ],
+                    ),
                   ),
-                ),
-                style: TextButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                  minimumSize: Size.zero,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
-                onPressed: () {
-                  context.push('/schedule/create');
-                },
+                ];
+              },
+              body: TabBarView(
+                controller: _tabController,
+                children: const [
+                  _TodayTasksTab(),
+                  _AllSchedulesTab(),
+                  CalendarScreen(),
+                ],
               ),
             ),
           ),
-          IconButton(
-            icon: const Icon(Icons.settings),
-            iconSize: 22,
-            onPressed: () {
-              context.push('/settings');
-            },
-          ),
-        ],
-      ),
-      body: TabBarView(
-        controller: _tabController,
-        children: const [
-          _TodayTasksTab(),
-          _AllSchedulesTab(),
-          CalendarScreen(),
         ],
       ),
     );
@@ -630,17 +659,17 @@ class _TaskCardState extends ConsumerState<_TaskCard> {
 
                             // 自分が完了した場合
                             if (currentUserId != null && currentUserId == widget.schedule.completedByMemberId) {
-                              return Row(
+                              return const Row(
                                 children: [
-                                  const Icon(
+                                  Icon(
                                     Icons.check_circle,
                                     size: 14,
                                     color: Colors.green,
                                   ),
-                                  const SizedBox(width: 4),
+                                  SizedBox(width: 4),
                                   Text(
                                     'あなたが完了',
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontSize: 12,
                                       color: Colors.green,
                                       fontWeight: FontWeight.bold,
@@ -664,7 +693,7 @@ class _TaskCardState extends ConsumerState<_TaskCard> {
                                     ),
                                     const SizedBox(width: 4),
                                     Text(
-                                      '${memberName}さんが完了',
+                                      '$memberNameさんが完了',
                                       style: const TextStyle(
                                         fontSize: 12,
                                         color: Colors.green,
@@ -803,31 +832,21 @@ class _TaskCardState extends ConsumerState<_TaskCard> {
 
   /// 完了者のメンバー名を取得
   Future<String> _getCompletedByMemberName(WidgetRef ref, String memberId) async {
-    print('=== 完了者名取得 ===');
-    print('memberId: $memberId');
-
     try {
       final doc = await FirebaseFirestore.instance.collection('users').doc(memberId).get();
-      print('ドキュメント存在: ${doc.exists}');
 
       if (doc.exists) {
         final data = doc.data();
-        print('ドキュメントデータ: $data');
         final displayName = data?['displayName'] as String?;
-        print('displayName: $displayName');
 
         if (displayName != null && displayName.isNotEmpty) {
-          print('返却値: $displayName');
           return displayName;
         } else {
-          print('displayNameが空またはnull、デフォルト値を返却');
           return 'メンバー';
         }
       }
-      print('ドキュメントが存在しない');
       return 'メンバー';
     } catch (e) {
-      print('エラー発生: $e');
       return 'メンバー';
     }
   }
@@ -864,7 +883,7 @@ class _StatusBadge extends StatelessWidget {
             schedule.nextScheduledDate!.day,
           );
           final delayDays = today.difference(scheduledDate).inDays;
-          label = '${delayDays}日遅延';
+          label = '$delayDays日遅延';
         } else {
           label = '遅延';
         }

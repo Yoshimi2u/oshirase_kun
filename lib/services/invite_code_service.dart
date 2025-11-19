@@ -33,7 +33,6 @@ class InviteCodeService {
   /// 招待コードが既に存在するかチェック
   Future<bool> _checkCodeExists(String code) async {
     try {
-      print('[InviteCodeService] 招待コード重複チェック: $code');
       final querySnapshot = await _firestore
           .collection('groups')
           .where('inviteCode', isEqualTo: code)
@@ -42,11 +41,9 @@ class InviteCodeService {
           .get();
 
       final exists = querySnapshot.docs.isNotEmpty;
-      print('[InviteCodeService] 重複チェック結果: ${exists ? "既存あり" : "利用可能"}');
       return exists;
     } catch (e) {
       // エラーが発生した場合は false を返す（コードは使用可能と判断）
-      print('[InviteCodeService] 招待コード重複チェックエラー: $e');
       return false;
     }
   }
@@ -54,9 +51,7 @@ class InviteCodeService {
   /// 招待コードからグループを検索
   Future<DocumentSnapshot?> findGroupByInviteCode(String code) async {
     try {
-      print('[InviteCodeService] 招待コード検索開始: $code');
       final upperCode = code.toUpperCase();
-      print('[InviteCodeService] 大文字変換後: $upperCode');
 
       final querySnapshot = await _firestore
           .collection('groups')
@@ -66,18 +61,13 @@ class InviteCodeService {
           .limit(1)
           .get();
 
-      print('[InviteCodeService] 検索結果: ${querySnapshot.docs.length}件');
-
       if (querySnapshot.docs.isEmpty) {
-        print('[InviteCodeService] 参加可能なグループが見つかりませんでした');
         return null;
       }
 
       final doc = querySnapshot.docs.first;
-      print('[InviteCodeService] グループ発見: ${doc.id}');
       return doc;
     } catch (e) {
-      print('[InviteCodeService] エラー: $e');
       throw Exception('グループの検索に失敗しました: $e');
     }
   }
