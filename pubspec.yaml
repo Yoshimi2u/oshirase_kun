@@ -3,7 +3,7 @@ description: お知らせ君 - 予定通知アプリ
 
 publish_to: 'none'
 
-version: 1.0.0+3
+version: 1.0.0+4
 
 environment:
   sdk: '>=2.19.4 <4.0.0'
