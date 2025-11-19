@@ -10,6 +10,7 @@ class Group {
   final DateTime createdAt;
   final DateTime updatedAt;
   final bool isActive; // グループが有効かどうか
+  final bool isJoinable; // 新規メンバーの参加を受け付けるかどうか
 
   const Group({
     required this.id,
@@ -20,6 +21,7 @@ class Group {
     required this.createdAt,
     required this.updatedAt,
     this.isActive = true,
+    this.isJoinable = true,
   });
 
   /// Firestoreドキュメントから Group オブジェクトを生成
@@ -34,6 +36,7 @@ class Group {
       createdAt: (data['createdAt'] as Timestamp).toDate(),
       updatedAt: (data['updatedAt'] as Timestamp).toDate(),
       isActive: data['isActive'] ?? true,
+      isJoinable: data['isJoinable'] ?? true,
     );
   }
 
@@ -47,6 +50,7 @@ class Group {
       'createdAt': Timestamp.fromDate(createdAt),
       'updatedAt': Timestamp.fromDate(updatedAt),
       'isActive': isActive,
+      'isJoinable': isJoinable,
     };
   }
 
@@ -60,6 +64,7 @@ class Group {
     DateTime? createdAt,
     DateTime? updatedAt,
     bool? isActive,
+    bool? isJoinable,
   }) {
     return Group(
       id: id ?? this.id,
@@ -70,6 +75,7 @@ class Group {
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       isActive: isActive ?? this.isActive,
+      isJoinable: isJoinable ?? this.isJoinable,
     );
   }
 

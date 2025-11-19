@@ -1,4 +1,5 @@
 import 'package:firebase_auth/firebase_auth.dart';
+import '../repositories/user_profile_repository.dart';
 
 /// Firebase Authentication サービス（匿名/メールパスワード対応）
 /// 既存コード互換のため、静的APIも提供する単一クラスに統合。
@@ -8,11 +9,20 @@ class AuthService {
 
   AuthService({FirebaseAuth? auth}) : _auth = auth ?? FirebaseAuth.instance;
 
-  // ----- 静的（互換用） -----
+  // ----- 静的(互換用) -----
   static Future<User?> signInAnonymouslyIfNeeded() async {
     final currentUser = _sAuth.currentUser;
     if (currentUser != null) return currentUser;
     final userCredential = await _sAuth.signInAnonymously();
+
+    // 新規匿名ユーザーのプロフィールを作成
+    // FCM初期化はMyApp._initializeUserDataで行われる
+    if (userCredential.user != null) {
+      final uid = userCredential.user!.uid;
+      final userProfileRepository = UserProfileRepository();
+      await userProfileRepository.createProfileIfNotExists(uid);
+    }
+
     return userCredential.user;
   }
 
@@ -106,7 +116,15 @@ class AuthService {
 
   Future<void> signOutAndStayAnonymous() async {
     await _auth.signOut();
-    await _auth.signInAnonymously();
+    final userCredential = await _auth.signInAnonymously();
+
+    // 新しい匿名ユーザーのプロフィールを作成
+    // FCM初期化はAuthStateの変更を検知して_initializeUserDataで行われる
+    if (userCredential.user != null) {
+      final uid = userCredential.user!.uid;
+      final userProfileRepository = UserProfileRepository();
+      await userProfileRepository.createProfileIfNotExists(uid);
+    }
   }
 
   Future<void> sendEmailVerification() async {

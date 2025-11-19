@@ -38,8 +38,11 @@ class GroupRepository {
       );
 
       print('Firestoreに保存中...');
-      await docRef.set(group.toFirestore());
+      final data = group.toFirestore();
+      print('保存するデータ: $data');
+      await docRef.set(data);
       print('グループ作成完了: ${group.id}');
+      print('招待コード: ${group.inviteCode}');
 
       return group;
     } catch (e) {
@@ -63,17 +66,32 @@ class GroupRepository {
     }
   }
 
+  /// グループIDでグループを監視（ストリーム）
+  Stream<Group?> getGroupStream(String groupId) {
+    return _groupsCollection.doc(groupId).snapshots().map((doc) {
+      if (!doc.exists) {
+        return null;
+      }
+      return Group.fromFirestore(doc);
+    });
+  }
+
   /// 招待コードでグループを検索
   Future<Group?> getGroupByInviteCode(String inviteCode) async {
     try {
+      print('[GroupRepository] getGroupByInviteCode開始: $inviteCode');
       final doc = await _inviteCodeService.findGroupByInviteCode(inviteCode);
 
       if (doc == null) {
+        print('[GroupRepository] グループが見つかりませんでした');
         return null;
       }
 
-      return Group.fromFirestore(doc);
+      final group = Group.fromFirestore(doc);
+      print('[GroupRepository] グループ取得成功: ${group.id}, name: ${group.name}, code: ${group.inviteCode}');
+      return group;
     } catch (e) {
+      print('[GroupRepository] エラー: $e');
       throw Exception('グループの検索に失敗しました: $e');
     }
   }
@@ -138,6 +156,18 @@ class GroupRepository {
       });
     } catch (e) {
       throw Exception('グループ名の更新に失敗しました: $e');
+    }
+  }
+
+  /// グループの参加可否を切り替え
+  Future<void> updateJoinable(String groupId, bool isJoinable) async {
+    try {
+      await _groupsCollection.doc(groupId).update({
+        'isJoinable': isJoinable,
+        'updatedAt': Timestamp.now(),
+      });
+    } catch (e) {
+      throw Exception('参加設定の更新に失敗しました: $e');
     }
   }
 

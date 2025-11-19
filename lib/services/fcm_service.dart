@@ -1,5 +1,6 @@
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 /// Firebase Cloud Messaging（FCM）を管理するサービスクラス
@@ -13,10 +14,24 @@ class FCMService {
 
   bool _initialized = false;
   String? _currentToken;
+  String? _currentUserId;
+  bool _listenersSetup = false;
 
   /// FCMサービスを初期化
   Future<void> initialize(String userId) async {
-    if (_initialized) return;
+    // 同じユーザーで既に初期化済みの場合はスキップ
+    if (_initialized && _currentUserId == userId) return;
+
+    // 異なるユーザーの場合は再初期化
+    if (_currentUserId != null && _currentUserId != userId) {
+      if (kDebugMode) {
+        print('[FCMService] ユーザー変更を検出: $_currentUserId -> $userId');
+      }
+      _initialized = false;
+      _currentToken = null;
+    }
+
+    _currentUserId = userId;
 
     try {
       // 通知権限をリクエスト
@@ -33,24 +48,18 @@ class FCMService {
 
       if (settings.authorizationStatus == AuthorizationStatus.authorized ||
           settings.authorizationStatus == AuthorizationStatus.provisional) {
-        // iOSの場合、APNSトークンが設定されるのを待つ（ベストエフォート）
+        // iOSの場合、APNSトークンが設定されるのを待つ
         if (defaultTargetPlatform == TargetPlatform.iOS) {
-          if (kDebugMode) {
-            print('[FCMService] iOS環境: APNSトークンの確認');
-          }
-
-          // 最大10秒間、APNSトークンの設定を待つ
-          for (int i = 0; i < 10; i++) {
+          // 最大5秒間、APNSトークンの設定を待つ
+          for (int i = 0; i < 5; i++) {
             await Future.delayed(const Duration(seconds: 1));
             try {
               final apnsToken = await _messaging.getAPNSToken();
               if (apnsToken != null) {
                 if (kDebugMode) {
-                  print('[FCMService] APNSトークン取得成功: ${apnsToken.substring(0, 10)}...');
+                  print('[FCMService] APNSトークン取得成功');
                 }
                 break;
-              } else if (kDebugMode) {
-                print('[FCMService] APNSトークン待機中... (${i + 1}/10)');
               }
             } catch (e) {
               if (kDebugMode) {
@@ -58,18 +67,9 @@ class FCMService {
               }
             }
           }
-
-          // 最終確認
-          final finalApnsToken = await _messaging.getAPNSToken();
-          if (finalApnsToken == null) {
-            if (kDebugMode) {
-              print('[FCMService] 警告: APNSトークンがnullですが、処理を続行します');
-              print('[FCMService] バックグラウンドでAPNSトークンが設定される可能性があります');
-            }
-          }
         }
 
-        // FCMトークンを取得（APNSトークンがnullでも試行）
+        // FCMトークンを取得
         try {
           _currentToken = await _messaging.getToken();
           if (kDebugMode) {
@@ -83,7 +83,10 @@ class FCMService {
           if (kDebugMode) {
             print('[FCMService] FCMトークン取得エラー: $e');
           }
-          // APNSトークンが設定されていない場合のエラーは無視して続行
+        }
+
+        if (kDebugMode) {
+          print('----------------------------------------');
         }
 
         // トークンをFirestoreに保存
@@ -93,44 +96,45 @@ class FCMService {
           print('[FCMService] FCMトークンがnullのため、Firestoreへの保存をスキップ');
         }
 
-        // トークンの更新を監視
-        _messaging.onTokenRefresh.listen((newToken) {
-          _currentToken = newToken;
-          if (kDebugMode) {
-            print('[FCMService] FCMトークン更新: ${newToken.substring(0, 20)}...');
-          }
-          _saveTokenToFirestore(userId, newToken);
-        });
+        // リスナーは一度だけ設定
+        if (!_listenersSetup) {
+          // トークンの更新を監視
+          _messaging.onTokenRefresh.listen((newToken) {
+            _currentToken = newToken;
+            if (kDebugMode) {
+              print('[FCMService] FCMトークン更新: ${newToken.substring(0, 20)}...');
+            }
+            if (_currentUserId != null) {
+              _saveTokenToFirestore(_currentUserId!, newToken);
+            }
+          });
 
-        // iOSの場合、APNSトークンが後から設定される可能性があるため
-        // 定期的にFCMトークンの再取得を試みる
-        if (defaultTargetPlatform == TargetPlatform.iOS && _currentToken == null) {
+          // フォアグラウンドメッセージの処理
+          FirebaseMessaging.onMessage.listen(_handleForegroundMessage);
+
+          _listenersSetup = true;
           if (kDebugMode) {
-            print('[FCMService] iOS: バックグラウンドでトークン取得を継続');
+            print('[FCMService] リスナー設定完了');
           }
+        }
+
+        if (defaultTargetPlatform == TargetPlatform.iOS && _currentToken == null) {
           _retryTokenFetch(userId);
         }
 
-        // フォアグラウンドメッセージの処理
-        FirebaseMessaging.onMessage.listen(_handleForegroundMessage);
-
-        // バックグラウンドメッセージの処理は main.dart で設定
-        // FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
-
         _initialized = true;
-        if (kDebugMode) {
-          print('[FCMService] 初期化完了');
-        }
       } else {
         if (kDebugMode) {
           print('[FCMService] 通知権限が拒否されました');
         }
+        _initialized = true;
       }
     } catch (e) {
       if (kDebugMode) {
         print('[FCMService] 初期化エラー: $e');
       }
       // エラーが発生しても続行（FCMが使えないだけでアプリは動作する）
+      _initialized = true;
     }
   }
 
@@ -154,28 +158,20 @@ class FCMService {
 
   /// FCMトークン取得のリトライ（iOSでAPNSトークンが遅延設定される場合）
   Future<void> _retryTokenFetch(String userId) async {
-    // 5秒後、10秒後、20秒後にリトライ
     final retryDelays = [5, 10, 20];
 
     for (final delay in retryDelays) {
       await Future.delayed(Duration(seconds: delay));
 
-      if (_currentToken != null) {
-        // すでにトークンが取得できていればリトライ不要
-        break;
-      }
+      if (_currentToken != null) break;
 
       try {
-        if (kDebugMode) {
-          print('[FCMService] トークン再取得試行 (${delay}秒後)');
-        }
-
         final token = await _messaging.getToken();
         if (token != null) {
           _currentToken = token;
           await _saveTokenToFirestore(userId, token);
           if (kDebugMode) {
-            print('[FCMService] トークン再取得成功: ${token.substring(0, 20)}...');
+            print('[FCMService] トークン再取得成功');
           }
           break;
         }
@@ -203,6 +199,37 @@ class FCMService {
   /// 現在のFCMトークンを取得
   String? get currentToken => _currentToken;
 
+  /// 通知権限の状態を取得（プラットフォーム対応版）
+  Future<AuthorizationStatus> getPermissionStatus() async {
+    final settings = await _messaging.getNotificationSettings();
+    return settings.authorizationStatus;
+  }
+
+  /// 通知が有効かどうかを判定（プラットフォーム対応）
+  /// iOS: 権限の状態を確認
+  /// Android: FCMトークンの有無を確認（Android 12以下は常にtrue、Android 13+は権限も考慮）
+  Future<bool> isNotificationEnabled() async {
+    try {
+      if (defaultTargetPlatform == TargetPlatform.iOS) {
+        // iOSの場合は権限の状態を確認
+        final settings = await _messaging.getNotificationSettings();
+        return settings.authorizationStatus == AuthorizationStatus.authorized ||
+            settings.authorizationStatus == AuthorizationStatus.provisional;
+      } else {
+        // Androidの場合はFCMトークンの有無で判定
+        // Android 12以下: 通知は常に有効（トークンが取得できる）
+        // Android 13+: 権限が必要だが、トークンの有無で実質的な状態を判定
+        final token = await _messaging.getToken();
+        return token != null && token.isNotEmpty;
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('[FCMService] 通知有効状態の確認エラー: $e');
+      }
+      return false;
+    }
+  }
+
   /// FCMトークンを削除（ログアウト時など）
   Future<void> deleteToken(String userId) async {
     try {
@@ -212,6 +239,8 @@ class FCMService {
       });
 
       _currentToken = null;
+      _currentUserId = null;
+      _initialized = false;
 
       if (kDebugMode) {
         print('[FCMService] FCMトークンを削除しました');

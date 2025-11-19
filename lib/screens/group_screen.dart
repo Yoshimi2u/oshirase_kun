@@ -300,6 +300,9 @@ class GroupScreen extends ConsumerWidget {
           textCapitalization: TextCapitalization.characters,
           maxLength: 6,
           autofocus: true,
+          onSubmitted: (_) {
+            // Enterキーで参加処理を実行
+          },
         ),
         actions: [
           TextButton(
@@ -323,24 +326,37 @@ class GroupScreen extends ConsumerWidget {
                     return;
                   }
 
+                  // ダイアログを閉じる前に処理を開始
+                  Navigator.pop(context);
+
                   try {
+                    // ローディング表示（オプション）
+                    if (context.mounted) {
+                      ToastUtils.showSuccess('グループに参加中...');
+                    }
+
                     final group = await ref.read(groupNotifierProvider.notifier).joinGroup(
                           inviteCode: code,
                           userId: user.uid,
                         );
 
                     if (context.mounted) {
-                      Navigator.pop(context);
                       if (group != null) {
                         ToastUtils.showSuccess('「${group.name}」に参加しました');
                       } else {
-                        ToastUtils.showError('グループへの参加に失敗しました');
+                        ToastUtils.showError('招待コードが見つかりません');
                       }
                     }
                   } catch (e) {
                     if (context.mounted) {
-                      Navigator.pop(context);
-                      ToastUtils.showError('グループへの参加に失敗しました');
+                      final errorMessage = e.toString();
+                      if (errorMessage.contains('既にこのグループ')) {
+                        ToastUtils.showError('既にこのグループに参加しています');
+                      } else if (errorMessage.contains('招待コード')) {
+                        ToastUtils.showError('招待コードが見つかりません');
+                      } else {
+                        ToastUtils.showError('グループへの参加に失敗しました');
+                      }
                     }
                   }
                 },
@@ -468,108 +484,155 @@ class _GroupCard extends ConsumerWidget {
 
     showModalBottomSheet(
       context: context,
-      builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.group),
-              title: Text(group.name),
-              subtitle: Text(
-                'メンバー: ${group.memberCount}人',
-                style: TextStyle(
-                  color: Theme.of(context).brightness == Brightness.dark ? Colors.blue[300] : Colors.blue[700],
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
-            const Divider(),
-            ListTile(
-              leading: const Icon(Icons.people),
-              title: const Text('メンバー一覧'),
-              onTap: () {
-                Navigator.pop(context);
-                _showMembersList(context, ref);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.exit_to_app),
-              title: const Text('グループから退出'),
-              onTap: () async {
-                if (isOwner) {
-                  ToastUtils.showError('オーナーは退出できません。グループを削除してください。');
-                  return;
-                }
+      builder: (context) => Consumer(
+        builder: (context, ref, child) {
+          // グループ情報をリアルタイムで監視
+          final groupAsync = ref.watch(groupStreamProvider(group.id));
 
-                final confirmed = await showDialog<bool>(
-                  context: context,
-                  builder: (context) => AlertDialog(
-                    title: const Text('確認'),
-                    content: Text('「${group.name}」から退出しますか?'),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(context, false),
-                        child: const Text('キャンセル'),
-                      ),
-                      TextButton(
-                        onPressed: () => Navigator.pop(context, true),
-                        child: const Text('退出'),
-                      ),
-                    ],
-                  ),
-                );
-
-                if (confirmed == true && user != null && context.mounted) {
-                  final success =
-                      await ref.read(groupNotifierProvider.notifier).leaveGroup(groupId: group.id, userId: user.uid);
-
-                  if (context.mounted) {
-                    Navigator.pop(context);
-                    if (success) {
-                      ToastUtils.showSuccess('グループから退出しました');
-                    }
-                  }
-                }
-              },
+          return groupAsync.when(
+            loading: () => const Center(child: CircularProgressIndicator()),
+            error: (error, stack) => Center(
+              child: Text('エラー: $error'),
             ),
-            if (isOwner)
-              ListTile(
-                leading: const Icon(Icons.delete, color: Colors.red),
-                title: const Text('グループを削除', style: TextStyle(color: Colors.red)),
-                onTap: () async {
-                  final confirmed = await showDialog<bool>(
-                    context: context,
-                    builder: (context) => AlertDialog(
-                      title: const Text('確認'),
-                      content: Text('「${group.name}」を削除しますか?\nこの操作は取り消せません。'),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(context, false),
-                          child: const Text('キャンセル'),
+            data: (currentGroup) {
+              if (currentGroup == null) {
+                return const Center(child: Text('グループが見つかりません'));
+              }
+
+              return SafeArea(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    ListTile(
+                      leading: const Icon(Icons.group),
+                      title: Text(currentGroup.name),
+                      subtitle: Text(
+                        'メンバー: ${currentGroup.memberCount}人',
+                        style: TextStyle(
+                          color: Theme.of(context).brightness == Brightness.dark ? Colors.blue[300] : Colors.blue[700],
+                          fontWeight: FontWeight.w500,
                         ),
-                        TextButton(
-                          onPressed: () => Navigator.pop(context, true),
-                          style: TextButton.styleFrom(foregroundColor: Colors.red),
-                          child: const Text('削除'),
-                        ),
-                      ],
+                      ),
                     ),
-                  );
+                    const Divider(),
+                    ListTile(
+                      leading: const Icon(Icons.people),
+                      title: const Text('メンバー一覧'),
+                      onTap: () {
+                        Navigator.pop(context);
+                        _showMembersList(context, ref);
+                      },
+                    ),
+                    if (isOwner)
+                      SwitchListTile(
+                        secondary: const Icon(Icons.lock_open),
+                        title: const Text('新規メンバーの参加を許可'),
+                        subtitle: Text(
+                          currentGroup.isJoinable ? '招待コードで参加できます' : '参加を一時停止中',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: currentGroup.isJoinable ? Colors.green : Colors.orange,
+                          ),
+                        ),
+                        value: currentGroup.isJoinable,
+                        onChanged: (value) async {
+                          final success = await ref.read(groupNotifierProvider.notifier).updateJoinable(
+                                groupId: currentGroup.id,
+                                isJoinable: value,
+                              );
 
-                  if (confirmed == true && context.mounted) {
-                    final success = await ref.read(groupNotifierProvider.notifier).deleteGroup(group.id);
+                          if (success) {
+                            ToastUtils.showSuccess(
+                              value ? '参加を許可しました' : '参加を停止しました',
+                            );
+                          } else {
+                            ToastUtils.showError('設定の更新に失敗しました');
+                          }
+                        },
+                      ),
+                    ListTile(
+                      leading: const Icon(Icons.exit_to_app),
+                      title: const Text('グループから退出'),
+                      onTap: () async {
+                        if (isOwner) {
+                          ToastUtils.showError('オーナーは退出できません。グループを削除してください。');
+                          return;
+                        }
 
-                    if (context.mounted) {
-                      Navigator.pop(context);
-                      if (success) {
-                        ToastUtils.showSuccess('グループを削除しました');
-                      }
-                    }
-                  }
-                },
-              ),
-          ],
-        ),
+                        final confirmed = await showDialog<bool>(
+                          context: context,
+                          builder: (context) => AlertDialog(
+                            title: const Text('確認'),
+                            content: Text('「${currentGroup.name}」から退出しますか?'),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.pop(context, false),
+                                child: const Text('キャンセル'),
+                              ),
+                              TextButton(
+                                onPressed: () => Navigator.pop(context, true),
+                                child: const Text('退出'),
+                              ),
+                            ],
+                          ),
+                        );
+
+                        if (confirmed == true && user != null && context.mounted) {
+                          final success = await ref
+                              .read(groupNotifierProvider.notifier)
+                              .leaveGroup(groupId: currentGroup.id, userId: user.uid);
+
+                          if (context.mounted) {
+                            Navigator.pop(context);
+                            if (success) {
+                              ToastUtils.showSuccess('グループから退出しました');
+                            }
+                          }
+                        }
+                      },
+                    ),
+                    if (isOwner)
+                      ListTile(
+                        leading: const Icon(Icons.delete, color: Colors.red),
+                        title: const Text('グループを削除', style: TextStyle(color: Colors.red)),
+                        onTap: () async {
+                          final confirmed = await showDialog<bool>(
+                            context: context,
+                            builder: (context) => AlertDialog(
+                              title: const Text('確認'),
+                              content: Text('「${currentGroup.name}」を削除しますか?\nこの操作は取り消せません。'),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.pop(context, false),
+                                  child: const Text('キャンセル'),
+                                ),
+                                TextButton(
+                                  onPressed: () => Navigator.pop(context, true),
+                                  style: TextButton.styleFrom(foregroundColor: Colors.red),
+                                  child: const Text('削除'),
+                                ),
+                              ],
+                            ),
+                          );
+
+                          if (confirmed == true && context.mounted) {
+                            final success = await ref.read(groupNotifierProvider.notifier).deleteGroup(currentGroup.id);
+
+                            if (context.mounted) {
+                              Navigator.pop(context);
+                              if (success) {
+                                ToastUtils.showSuccess('グループを削除しました');
+                              }
+                            }
+                          }
+                        },
+                      ),
+                  ],
+                ),
+              );
+            },
+          );
+        },
       ),
     );
   }

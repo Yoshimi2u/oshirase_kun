@@ -131,7 +131,15 @@ class ScheduleNotifier extends StateNotifier<AsyncValue<void>> {
 
   /// 予定を作成
   Future<void> createSchedule(Schedule schedule) async {
+    print('=== ScheduleNotifier.createSchedule 開始 ===');
+    print('userId: $_userId');
+    print('title: ${schedule.title}');
+    print('isGroupSchedule: ${schedule.isGroupSchedule}');
+    print('groupId: ${schedule.groupId}');
+    print('startDate: ${schedule.startDate}');
+
     if (_userId == null) {
+      print('エラー: ユーザーが認証されていません');
       state = AsyncValue.error('ユーザーが認証されていません', StackTrace.current);
       return;
     }
@@ -143,11 +151,19 @@ class ScheduleNotifier extends StateNotifier<AsyncValue<void>> {
         nextScheduledDate: schedule.startDate ?? DateTime.now(),
       );
 
+      print('nextScheduledDate設定完了: ${initialSchedule.nextScheduledDate}');
+      print('リポジトリのcreateSchedule呼び出し開始...');
+
       await _repository.createSchedule(_userId!, initialSchedule);
 
+      print('=== ScheduleNotifier.createSchedule 成功 ===');
       state = const AsyncValue.data(null);
     } catch (e, st) {
+      print('=== ScheduleNotifier.createSchedule エラー ===');
+      print('エラー: $e');
+      print('スタックトレース: $st');
       state = AsyncValue.error(e, st);
+      rethrow; // エラーを再スローしてUIで検出できるようにする
     }
   }
 

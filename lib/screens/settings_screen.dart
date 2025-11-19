@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../models/notification_settings.dart';
@@ -6,6 +7,7 @@ import '../providers/notification_settings_provider.dart';
 import '../providers/user_profile_provider.dart';
 import '../providers/theme_provider.dart';
 import '../utils/toast_utils.dart';
+import '../services/fcm_service.dart';
 
 /// 設定画面
 class SettingsScreen extends ConsumerWidget {
@@ -131,89 +133,163 @@ class SettingsScreen extends ConsumerWidget {
           ),
         ),
 
-        // 朝の通知設定
-        Card(
-          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: Column(
-            children: [
-              SwitchListTile(
-                value: settings.morningEnabled,
-                onChanged: (value) {
-                  ref.read(notificationSettingsNotifierProvider.notifier).toggleMorningEnabled(value);
-                },
-                title: const Text(
-                  '朝の通知',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
-                secondary: const Icon(Icons.wb_sunny, color: Colors.orange),
-              ),
-              const Divider(height: 1),
-              ListTile(
-                enabled: settings.morningEnabled,
-                leading: const Icon(Icons.access_time),
-                title: const Text('通知時刻'),
-                subtitle: Text(
-                  '${settings.morningHour.toString().padLeft(2, '0')}:00',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: settings.morningEnabled ? Colors.blue : Colors.grey,
+        // 通知権限チェック用のFutureBuilder（プラットフォーム対応版）
+        FutureBuilder<bool>(
+          future: FCMService().isNotificationEnabled(),
+          builder: (context, snapshot) {
+            final isNotificationEnabled = snapshot.data ?? true; // デフォルトはtrue（読み込み中は通知設定を表示）
+
+            // 通知が無効の場合、誘導カードを表示
+            if (!isNotificationEnabled) {
+              return Card(
+                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                color: Colors.orange[50],
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    children: [
+                      const Icon(
+                        Icons.notifications_off,
+                        size: 48,
+                        color: Colors.orange,
+                      ),
+                      const SizedBox(height: 12),
+                      const Text(
+                        '通知が無効になっています',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.orange,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        defaultTargetPlatform == TargetPlatform.iOS
+                            ? '通知を受け取るには、iOSの設定から\n通知を許可してください'
+                            : '通知を受け取るには、設定から\n通知を許可してください',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.grey[700],
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 16),
+                      ElevatedButton.icon(
+                        icon: const Icon(Icons.settings),
+                        label: Text(
+                          defaultTargetPlatform == TargetPlatform.iOS ? 'iOSの設定を開く' : 'Androidの設定を開く',
+                        ),
+                        onPressed: () async {
+                          final message = defaultTargetPlatform == TargetPlatform.iOS
+                              ? '設定 > お知らせ君 > 通知 から許可してください'
+                              : '設定 > アプリ > お知らせ君 > 通知 から許可してください';
+                          ToastUtils.showInfo(message);
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.orange,
+                          foregroundColor: Colors.white,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                trailing: settings.morningEnabled ? const Icon(Icons.arrow_forward_ios, size: 16) : null,
-                onTap: settings.morningEnabled ? () => _selectMorningHour(context, ref, settings.morningHour) : null,
-              ),
-            ],
-          ),
-        ),
+              );
+            }
 
-        // 夜の通知設定
-        Card(
-          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: Column(
-            children: [
-              SwitchListTile(
-                value: settings.eveningEnabled,
-                onChanged: (value) {
-                  ref.read(notificationSettingsNotifierProvider.notifier).toggleEveningEnabled(value);
-                },
-                title: const Text(
-                  '夜の通知',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
-                secondary: const Icon(Icons.nightlight_round, color: Colors.indigo),
-              ),
-              const Divider(height: 1),
-              ListTile(
-                enabled: settings.eveningEnabled,
-                leading: const Icon(Icons.access_time),
-                title: const Text('通知時刻'),
-                subtitle: Text(
-                  '${settings.eveningHour.toString().padLeft(2, '0')}:00',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: settings.eveningEnabled ? Colors.blue : Colors.grey,
+            // 通知が有効な場合、朝と夜の通知設定を表示
+            return Column(
+              children: [
+                // 朝の通知設定
+                Card(
+                  margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  child: Column(
+                    children: [
+                      SwitchListTile(
+                        value: settings.morningEnabled,
+                        onChanged: (value) {
+                          ref.read(notificationSettingsNotifierProvider.notifier).toggleMorningEnabled(value);
+                        },
+                        title: const Text(
+                          '朝の通知',
+                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                        ),
+                        secondary: const Icon(Icons.wb_sunny, color: Colors.orange),
+                      ),
+                      const Divider(height: 1),
+                      ListTile(
+                        enabled: settings.morningEnabled,
+                        leading: const Icon(Icons.access_time),
+                        title: const Text('通知時刻'),
+                        subtitle: Text(
+                          '${settings.morningHour.toString().padLeft(2, '0')}:00',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                            color: settings.morningEnabled ? Colors.blue : Colors.grey,
+                          ),
+                        ),
+                        trailing: settings.morningEnabled ? const Icon(Icons.arrow_forward_ios, size: 16) : null,
+                        onTap: settings.morningEnabled
+                            ? () => _selectMorningHour(context, ref, settings.morningHour)
+                            : null,
+                      ),
+                    ],
                   ),
                 ),
-                trailing: settings.eveningEnabled ? const Icon(Icons.arrow_forward_ios, size: 16) : null,
-                onTap: settings.eveningEnabled ? () => _selectEveningHour(context, ref, settings.eveningHour) : null,
-              ),
-            ],
-          ),
-        ),
 
-        // 説明
-        Padding(
-          padding: const EdgeInsets.all(24),
-          child: Text(
-            '通知は毎日指定した時刻に、その日のタスクと未完了タスクの件数をお知らせします。',
-            style: TextStyle(
-              fontSize: 14,
-              color: Colors.grey[600],
-            ),
-            textAlign: TextAlign.center,
-          ),
+                // 夜の通知設定
+                Card(
+                  margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  child: Column(
+                    children: [
+                      SwitchListTile(
+                        value: settings.eveningEnabled,
+                        onChanged: (value) {
+                          ref.read(notificationSettingsNotifierProvider.notifier).toggleEveningEnabled(value);
+                        },
+                        title: const Text(
+                          '夜の通知',
+                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                        ),
+                        secondary: const Icon(Icons.nightlight_round, color: Colors.indigo),
+                      ),
+                      const Divider(height: 1),
+                      ListTile(
+                        enabled: settings.eveningEnabled,
+                        leading: const Icon(Icons.access_time),
+                        title: const Text('通知時刻'),
+                        subtitle: Text(
+                          '${settings.eveningHour.toString().padLeft(2, '0')}:00',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                            color: settings.eveningEnabled ? Colors.blue : Colors.grey,
+                          ),
+                        ),
+                        trailing: settings.eveningEnabled ? const Icon(Icons.arrow_forward_ios, size: 16) : null,
+                        onTap: settings.eveningEnabled
+                            ? () => _selectEveningHour(context, ref, settings.eveningHour)
+                            : null,
+                      ),
+                    ],
+                  ),
+                ),
+
+                // 説明
+                Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Text(
+                    '通知は毎日指定した時刻に、その日のタスクと未完了タスクの件数をお知らせします。',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.grey[600],
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ],
+            );
+          },
         ),
       ],
     );
@@ -258,7 +334,7 @@ class SettingsScreen extends ConsumerWidget {
         }
       } catch (e) {
         if (context.mounted) {
-          ToastUtils.showError('更新に失敗しました');
+          ToastUtils.showError('ユーザー名の更新に失敗しました');
         }
       }
     }

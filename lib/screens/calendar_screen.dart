@@ -4,7 +4,9 @@ import 'package:table_calendar/table_calendar.dart';
 import 'package:intl/intl.dart';
 import 'package:go_router/go_router.dart';
 import '../models/schedule.dart';
+import '../models/completion_history.dart';
 import '../providers/schedule_provider.dart';
+import '../providers/completion_history_provider.dart';
 import '../providers/group_provider.dart';
 import '../utils/toast_utils.dart';
 
@@ -124,14 +126,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
   List<Schedule> _getEventsForDay(DateTime day, List<Schedule> schedules) {
     final targetDate = DateTime(day.year, day.month, day.day);
     return schedules.where((schedule) {
-      if (schedule.nextScheduledDate == null) return false;
-      final scheduleDate = DateTime(
-        schedule.nextScheduledDate!.year,
-        schedule.nextScheduledDate!.month,
-        schedule.nextScheduledDate!.day,
-      );
-
-      // 完了履歴もチェック
+      // 完了履歴をチェック
       final isCompleted = schedule.completionHistory.any((completedDate) {
         final completed = DateTime(
           completedDate.year,
@@ -141,117 +136,122 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
         return isSameDay(completed, targetDate);
       });
 
-      return isSameDay(scheduleDate, targetDate) || isCompleted;
+      // 次回予定日をチェック
+      if (schedule.nextScheduledDate != null) {
+        final scheduleDate = DateTime(
+          schedule.nextScheduledDate!.year,
+          schedule.nextScheduledDate!.month,
+          schedule.nextScheduledDate!.day,
+        );
+        return isSameDay(scheduleDate, targetDate) || isCompleted;
+      }
+
+      // 次回予定日がない場合は完了履歴のみでチェック
+      return isCompleted;
     }).toList();
   }
 
   /// 選択日の予定リスト
   Widget _buildScheduleList(List<Schedule> schedules) {
-    // 選択日に完了した予定のID一覧
-    final completedScheduleIds = schedules
-        .where((schedule) {
-          return schedule.completionHistory.any((completedDate) {
-            final completed = DateTime(
-              completedDate.year,
-              completedDate.month,
-              completedDate.day,
-            );
-            return isSameDay(completed, _selectedDay);
-          });
-        })
-        .map((s) => s.id)
-        .toSet();
+    // 選択日の完了履歴を取得
+    final completionHistoriesAsync = ref.watch(completionHistoriesByDateProvider(_selectedDay));
 
-    // 選択日の予定（完了済みを除外）
-    final selectedDaySchedules = schedules.where((schedule) {
-      if (schedule.nextScheduledDate == null) return false;
+    return completionHistoriesAsync.when(
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (error, stack) => Center(
+        child: Text('完了履歴の読み込みに失敗しました: $error'),
+      ),
+      data: (completionHistories) {
+        // 選択日に完了したスケジュールIDの一覧
+        final completedScheduleIds = completionHistories.map((h) => h.scheduleId).toSet();
 
-      final scheduleDate = DateTime(
-        schedule.nextScheduledDate!.year,
-        schedule.nextScheduledDate!.month,
-        schedule.nextScheduledDate!.day,
-      );
+        // 選択日の予定（完了済みを除外）
+        final selectedDaySchedules = schedules.where((schedule) {
+          if (schedule.nextScheduledDate == null) return false;
 
-      // 選択日と一致し、かつ完了済みではない
-      return isSameDay(scheduleDate, _selectedDay) && !completedScheduleIds.contains(schedule.id);
-    }).toList();
+          final scheduleDate = DateTime(
+            schedule.nextScheduledDate!.year,
+            schedule.nextScheduledDate!.month,
+            schedule.nextScheduledDate!.day,
+          );
 
-    // 選択日に完了した予定
-    final completedOnSelectedDay = schedules.where((schedule) {
-      return completedScheduleIds.contains(schedule.id);
-    }).toList();
+          // 選択日と一致し、かつ完了済みではない
+          return isSameDay(scheduleDate, _selectedDay) && !completedScheduleIds.contains(schedule.id);
+        }).toList();
 
-    final dateFormat = DateFormat('M月d日(E)', 'ja_JP');
+        final dateFormat = DateFormat('M月d日(E)', 'ja_JP');
 
-    return Container(
-      color: Theme.of(context).colorScheme.surface,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Text(
-              dateFormat.format(_selectedDay),
-              style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
-          if (selectedDaySchedules.isEmpty && completedOnSelectedDay.isEmpty)
-            const Expanded(
-              child: Center(
+        return Container(
+          color: Theme.of(context).colorScheme.surface,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(16),
                 child: Text(
-                  '予定がありません',
-                  style: TextStyle(
-                    color: Colors.grey,
-                    fontSize: 16,
+                  dateFormat.format(_selectedDay),
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
                   ),
                 ),
               ),
-            )
-          else
-            Expanded(
-              child: ListView(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                children: [
-                  // 予定されているタスク
-                  if (selectedDaySchedules.isNotEmpty) ...[
-                    const Padding(
-                      padding: EdgeInsets.only(bottom: 8),
-                      child: Text(
-                        '予定',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.blue,
-                        ),
+              if (selectedDaySchedules.isEmpty && completionHistories.isEmpty)
+                const Expanded(
+                  child: Center(
+                    child: Text(
+                      '予定がありません',
+                      style: TextStyle(
+                        color: Colors.grey,
+                        fontSize: 16,
                       ),
                     ),
-                    ...selectedDaySchedules.map((schedule) => _buildScheduleCard(schedule, false)),
-                  ],
+                  ),
+                )
+              else
+                Expanded(
+                  child: ListView(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    children: [
+                      // 予定されているタスク
+                      if (selectedDaySchedules.isNotEmpty) ...[
+                        const Padding(
+                          padding: EdgeInsets.only(bottom: 8),
+                          child: Text(
+                            '予定',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.blue,
+                            ),
+                          ),
+                        ),
+                        ...selectedDaySchedules.map((schedule) => _buildScheduleCard(schedule, false)),
+                      ],
 
-                  // 完了したタスク
-                  if (completedOnSelectedDay.isNotEmpty) ...[
-                    const SizedBox(height: 16),
-                    const Padding(
-                      padding: EdgeInsets.only(bottom: 8),
-                      child: Text(
-                        '完了済み',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.green,
+                      // 完了したタスク
+                      if (completionHistories.isNotEmpty) ...[
+                        const SizedBox(height: 16),
+                        const Padding(
+                          padding: EdgeInsets.only(bottom: 8),
+                          child: Text(
+                            '完了済み',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.green,
+                            ),
+                          ),
                         ),
-                      ),
-                    ),
-                    ...completedOnSelectedDay.map((schedule) => _buildScheduleCard(schedule, true)),
-                  ],
-                ],
-              ),
-            ),
-        ],
-      ),
+                        ...completionHistories.map((history) => _buildCompletionHistoryCard(history)),
+                      ],
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -277,16 +277,18 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
       elevation: 2,
       clipBehavior: Clip.antiAlias,
       child: InkWell(
-        onTap: () {
-          // nextScheduledDateがある場合はクエリパラメータとして渡す
-          final uri = Uri(
-            path: '/schedule/edit/${schedule.id}',
-            queryParameters: schedule.nextScheduledDate != null
-                ? {'initialDate': schedule.nextScheduledDate!.toIso8601String()}
-                : null,
-          );
-          context.push(uri.toString());
-        },
+        onTap: isCompleted
+            ? null // 完了済みタスクは編集不可
+            : () {
+                // nextScheduledDateがある場合はクエリパラメータとして渡す
+                final uri = Uri(
+                  path: '/schedule/edit/${schedule.id}',
+                  queryParameters: schedule.nextScheduledDate != null
+                      ? {'initialDate': schedule.nextScheduledDate!.toIso8601String()}
+                      : null,
+                );
+                context.push(uri.toString());
+              },
         child: IntrinsicHeight(
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -484,6 +486,104 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                               padding: const EdgeInsets.symmetric(vertical: 12),
                             ),
                           ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 完了履歴カード
+  Widget _buildCompletionHistoryCard(CompletionHistory history) {
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      elevation: 2,
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: null, // 完了履歴は編集不可
+        child: IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // 左アクセントバー（緑色）
+              Container(
+                width: 4,
+                color: Colors.green,
+              ),
+              // メインコンテンツ
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // タイトル
+                      Text(
+                        history.scheduleTitle,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      // 完了者情報（グループタスクの場合）
+                      if (history.groupId != null && history.completedByMemberName != null) ...[
+                        Row(
+                          children: [
+                            const Icon(Icons.check_circle, size: 16, color: Colors.green),
+                            const SizedBox(width: 4),
+                            Text(
+                              '${history.completedByMemberName}さんが完了',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                      ],
+                      // グループバッジ
+                      if (history.groupId != null) ...[
+                        Consumer(
+                          builder: (context, ref, child) {
+                            final groupAsync = ref.watch(groupProvider(history.groupId!));
+                            return groupAsync.when(
+                              data: (group) {
+                                if (group == null) return const SizedBox.shrink();
+                                return Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: Colors.blue.withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.group, size: 14, color: Colors.blue[700]),
+                                      const SizedBox(width: 2),
+                                      Text(
+                                        group.name,
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: Colors.blue[700],
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              },
+                              loading: () => const SizedBox.shrink(),
+                              error: (_, __) => const SizedBox.shrink(),
+                            );
+                          },
                         ),
                       ],
                     ],

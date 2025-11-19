@@ -4,52 +4,29 @@ service cloud.firestore {
   match /databases/{database}/documents {
     // ユーザードキュメント（FCMトークン・通知設定・プロフィール保存用）
     match /users/{userId} {
-      // 読み取り: 自分のデータのみ、またはグループメンバーが表示名を取得する場合
-      allow read: if request.auth != null && request.auth.uid == userId;
+      // 読み取り: 認証済みユーザーは全員読み取り可能（グループメンバーの表示名取得のため）
+      allow read: if request.auth != null;
       
       // 書き込み: 自分のデータのみ（FCMトークン・通知設定・プロフィールの更新用）
       allow write: if request.auth != null 
                    && request.auth.uid == userId
+                   // displayNameのバリデーション
                    && (!request.resource.data.keys().hasAny(['displayName']) 
                        || (request.resource.data.displayName is string 
-                           && request.resource.data.displayName.size() <= 20));
-      
-      // ユーザーの設定（通知設定など）
-      match /settings/{settingId} {
-        // 読み取り: 自分の設定のみ
-        allow read: if request.auth != null && request.auth.uid == userId;
-        
-        // 書き込み: 自分の設定のみ
-        allow write: if request.auth != null 
-                     && request.auth.uid == userId
-                     && (settingId != 'notifications' 
-                         || (request.resource.data.keys().hasAll([
-                              'morningEnabled',
-                              'morningHour',
-                              'eveningEnabled',
-                              'eveningHour'
-                            ])
-                            && request.resource.data.morningEnabled is bool
-                            && request.resource.data.morningHour is int
-                            && request.resource.data.morningHour >= 0
-                            && request.resource.data.morningHour <= 23
-                            && request.resource.data.eveningEnabled is bool
-                            && request.resource.data.eveningHour is int
-                            && request.resource.data.eveningHour >= 0
-                            && request.resource.data.eveningHour <= 23));
-      }
-      
-      // バックアップメタデータ
-      match /backups/{backupId} {
-        // 読み取り: 自分のバックアップのみ
-        allow read: if request.auth != null && request.auth.uid == userId;
-        
-        // 作成: 自分のバックアップのみ
-        allow create: if request.auth != null && request.auth.uid == userId;
-        
-        // 削除: 自分のバックアップのみ
-        allow delete: if request.auth != null && request.auth.uid == userId;
-      }
+                           && request.resource.data.displayName.size() <= 20))
+                   // 通知設定のバリデーション（任意フィールド）
+                   && (!request.resource.data.keys().hasAny(['morningHour']) 
+                       || (request.resource.data.morningHour is int
+                           && request.resource.data.morningHour >= 0
+                           && request.resource.data.morningHour <= 23))
+                   && (!request.resource.data.keys().hasAny(['eveningHour']) 
+                       || (request.resource.data.eveningHour is int
+                           && request.resource.data.eveningHour >= 0
+                           && request.resource.data.eveningHour <= 23))
+                   && (!request.resource.data.keys().hasAny(['morningEnabled']) 
+                       || request.resource.data.morningEnabled is bool)
+                   && (!request.resource.data.keys().hasAny(['eveningEnabled']) 
+                       || request.resource.data.eveningEnabled is bool);
     }
     
     // ユーザーごとの予定データ
@@ -62,6 +39,12 @@ service cloud.firestore {
                && resource.data.groupId != null;
       }
       
+      // 作成時のグループ予定判定（resourceがまだないため、request.resource.dataを使用）
+      function isGroupScheduleOnCreate() {
+        return request.resource.data.isGroupSchedule == true 
+               && request.resource.data.groupId != null;
+      }
+      
       // グループメンバーかどうかを確認
       function isGroupMember(groupId) {
         return request.auth.uid in get(/databases/$(database)/documents/groups/$(groupId)).data.memberIds;
@@ -72,9 +55,11 @@ service cloud.firestore {
                   && (request.auth.uid == userId 
                       || (isGroupSchedule() && isGroupMember(resource.data.groupId)));
       
-      // 作成時のバリデーション
+      // 作成: 自分の予定 または グループ予定の作成者がグループメンバーに作成する場合
       allow create: if request.auth != null 
-                    && request.auth.uid == userId
+                    && (request.auth.uid == userId
+                        || (isGroupScheduleOnCreate() 
+                            && isGroupMember(request.resource.data.groupId)))
                     && request.resource.data.keys().hasAll([
                       'title', 
                       'description', 
@@ -108,11 +93,56 @@ service cloud.firestore {
                         || (isGroupSchedule() && isGroupMember(resource.data.groupId)));
     }
     
+    // 完了履歴データ
+    match /users/{userId}/completion_history/{historyId} {
+      // グループメンバーかどうかを確認
+      function isGroupMemberForHistory(groupId) {
+        return request.auth.uid in get(/databases/$(database)/documents/groups/$(groupId)).data.memberIds;
+      }
+      
+      // 読み取り: 自分の完了履歴のみ
+      allow read: if request.auth != null 
+                  && request.auth.uid == userId;
+      
+      // 作成: 自分の履歴 または グループメンバーが他メンバーの履歴を作成
+      allow create: if request.auth != null
+                    && request.resource.data.keys().hasAll([
+                      'scheduleId',
+                      'userId',
+                      'completedDate',
+                      'scheduleTitle',
+                      'createdAt'
+                    ])
+                    && request.resource.data.scheduleId is string
+                    && request.resource.data.userId is string
+                    && request.resource.data.userId == userId
+                    && request.resource.data.completedDate is timestamp
+                    && request.resource.data.scheduleTitle is string
+                    && request.resource.data.createdAt is timestamp
+                    && (
+                      // 自分の履歴を作成
+                      request.auth.uid == userId
+                      ||
+                      // グループタスクの場合、グループメンバーが他メンバーの履歴を作成可能
+                      (request.resource.data.keys().hasAny(['groupId'])
+                       && request.resource.data.groupId is string
+                       && isGroupMemberForHistory(request.resource.data.groupId))
+                    );
+      
+      // 更新: 許可しない（完了履歴は不変）
+      allow update: if false;
+      
+      // 削除: 自分の履歴のみ削除可能
+      allow delete: if request.auth != null 
+                    && request.auth.uid == userId;
+    }
+    
     // グループデータ
     match /groups/{groupId} {
-      // グループの読み取り: メンバーのみ
+      // グループの読み取り: 認証済みでアクティブなグループ
+      // これにより、メンバー検索クエリ (memberIds arrayContains) も動作する
       allow read: if request.auth != null 
-                  && request.auth.uid in resource.data.memberIds;
+                  && resource.data.isActive == true;
       
       // グループの作成: 認証済みユーザーが自分をオーナーとして作成
       allow create: if request.auth != null
@@ -124,6 +154,7 @@ service cloud.firestore {
                       'ownerId',
                       'memberIds',
                       'isActive',
+                      'isJoinable',
                       'createdAt',
                       'updatedAt'
                     ])
@@ -134,16 +165,36 @@ service cloud.firestore {
                     && request.resource.data.memberIds is list
                     && request.resource.data.memberIds.size() > 0
                     && request.resource.data.isActive is bool
+                    && request.resource.data.isJoinable is bool
                     && request.resource.data.createdAt is timestamp
                     && request.resource.data.updatedAt is timestamp;
       
-      // グループの更新: メンバーのみ（メンバー追加・削除、名前変更）
+      // グループの更新: 以下のいずれかの条件を満たす場合
+      // 1. 既存のメンバーが更新する（名前変更、メンバー削除など）
+      // 2. 新しいユーザーが自分自身をメンバーに追加する（グループ参加）
       allow update: if request.auth != null
-                    && request.auth.uid in resource.data.memberIds
+                    && (
+                      // 既存メンバーによる更新
+                      (request.auth.uid in resource.data.memberIds)
+                      ||
+                      // 新規ユーザーが自分をメンバーに追加する場合
+                      (request.auth.uid in request.resource.data.memberIds 
+                       && !(request.auth.uid in resource.data.memberIds)
+                       && request.resource.data.memberIds.size() == resource.data.memberIds.size() + 1)
+                    )
                     // オーナーは変更不可
                     && request.resource.data.ownerId == resource.data.ownerId
                     // 招待コードは変更不可
-                    && request.resource.data.inviteCode == resource.data.inviteCode;
+                    && request.resource.data.inviteCode == resource.data.inviteCode
+                    // グループ名は既存メンバーのみ変更可能
+                    && (request.resource.data.name == resource.data.name 
+                        || request.auth.uid in resource.data.memberIds)
+                    // isActiveは既存メンバーのみ変更可能
+                    && (request.resource.data.isActive == resource.data.isActive
+                        || request.auth.uid in resource.data.memberIds)
+                    // isJoinableはオーナーのみ変更可能
+                    && (request.resource.data.isJoinable == resource.data.isJoinable
+                        || request.auth.uid == resource.data.ownerId);
       
       // グループの削除: オーナーのみ
       allow delete: if request.auth != null

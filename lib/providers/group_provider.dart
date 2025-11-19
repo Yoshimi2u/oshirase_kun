@@ -110,6 +110,24 @@ class GroupNotifier extends StateNotifier<AsyncValue<void>> {
     }
   }
 
+  /// グループの参加可否を切り替え
+  Future<bool> updateJoinable({
+    required String groupId,
+    required bool isJoinable,
+  }) async {
+    state = const AsyncValue.loading();
+
+    try {
+      await _repository.updateJoinable(groupId, isJoinable);
+
+      state = const AsyncValue.data(null);
+      return true;
+    } catch (e, st) {
+      state = AsyncValue.error(e, st);
+      return false;
+    }
+  }
+
   /// グループを削除
   Future<bool> deleteGroup(String groupId) async {
     state = const AsyncValue.loading();
@@ -148,4 +166,10 @@ class GroupNotifier extends StateNotifier<AsyncValue<void>> {
 final groupProvider = FutureProvider.autoDispose.family<Group?, String>((ref, groupId) async {
   final repository = ref.watch(groupRepositoryProvider);
   return await repository.getGroup(groupId);
+});
+
+/// 特定のグループをリアルタイムで監視するプロバイダー
+final groupStreamProvider = StreamProvider.autoDispose.family<Group?, String>((ref, groupId) {
+  final repository = ref.watch(groupRepositoryProvider);
+  return repository.getGroupStream(groupId);
 });

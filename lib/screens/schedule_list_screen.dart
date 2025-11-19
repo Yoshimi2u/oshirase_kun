@@ -622,6 +622,35 @@ class _TaskCardState extends ConsumerState<_TaskCard> {
                         const SizedBox(height: 6),
                         Consumer(
                           builder: (context, ref, child) {
+                            final currentUserAsync = ref.watch(currentUserIdProvider);
+                            final currentUserId = currentUserAsync.maybeWhen(
+                              data: (id) => id,
+                              orElse: () => null,
+                            );
+
+                            // 自分が完了した場合
+                            if (currentUserId != null && currentUserId == widget.schedule.completedByMemberId) {
+                              return Row(
+                                children: [
+                                  const Icon(
+                                    Icons.check_circle,
+                                    size: 14,
+                                    color: Colors.green,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    'あなたが完了',
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.green,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ],
+                              );
+                            }
+
+                            // 他のメンバーが完了した場合
                             return FutureBuilder<String>(
                               future: _getCompletedByMemberName(ref, widget.schedule.completedByMemberId!),
                               builder: (context, snapshot) {
@@ -774,14 +803,31 @@ class _TaskCardState extends ConsumerState<_TaskCard> {
 
   /// 完了者のメンバー名を取得
   Future<String> _getCompletedByMemberName(WidgetRef ref, String memberId) async {
+    print('=== 完了者名取得 ===');
+    print('memberId: $memberId');
+
     try {
       final doc = await FirebaseFirestore.instance.collection('users').doc(memberId).get();
+      print('ドキュメント存在: ${doc.exists}');
+
       if (doc.exists) {
         final data = doc.data();
-        return data?['displayName'] as String? ?? 'メンバー';
+        print('ドキュメントデータ: $data');
+        final displayName = data?['displayName'] as String?;
+        print('displayName: $displayName');
+
+        if (displayName != null && displayName.isNotEmpty) {
+          print('返却値: $displayName');
+          return displayName;
+        } else {
+          print('displayNameが空またはnull、デフォルト値を返却');
+          return 'メンバー';
+        }
       }
+      print('ドキュメントが存在しない');
       return 'メンバー';
     } catch (e) {
+      print('エラー発生: $e');
       return 'メンバー';
     }
   }
@@ -824,9 +870,8 @@ class _StatusBadge extends StatelessWidget {
         }
         break;
       case ScheduleStatus.completed:
-        color = Colors.green;
-        label = '完了';
-        break;
+        // 完了チップは表示しない（完了者情報で代替）
+        return const SizedBox.shrink();
     }
 
     return Container(

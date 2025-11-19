@@ -10,6 +10,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'services/ad_manager.dart';
 import 'services/ad_free_manager.dart';
 import 'services/fcm_service.dart';
+import 'repositories/user_profile_repository.dart';
 import 'router.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
@@ -149,23 +150,35 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _initializeFCM();
+
+    // Flutterエンジンの起動完了後に初期化を実行
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _initializeUserData();
+    });
   }
 
-  /// FCMを初期化
-  Future<void> _initializeFCM() async {
+  /// ユーザーデータを初期化（プロフィール作成 + FCM初期化）
+  Future<void> _initializeUserData() async {
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user != null) {
+        if (kDebugMode) {
+          print('[MyApp] ユーザーデータ初期化開始: ${user.uid}');
+        }
+
+        final userProfileRepository = UserProfileRepository();
+        await userProfileRepository.createProfileIfNotExists(user.uid);
+
         final fcmService = FCMService();
         await fcmService.initialize(user.uid);
+
         if (kDebugMode) {
-          print('[MyApp] FCM初期化完了');
+          print('[MyApp] ユーザーデータ初期化完了');
         }
       }
     } catch (e) {
       if (kDebugMode) {
-        print('[MyApp] FCM初期化エラー: $e');
+        print('[MyApp] ユーザーデータ初期化エラー: $e');
       }
     }
   }

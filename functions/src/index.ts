@@ -1,6 +1,5 @@
 import {setGlobalOptions} from "firebase-functions";
 import {onSchedule} from "firebase-functions/v2/scheduler";
-import {onCall} from "firebase-functions/v2/https";
 import {onDocumentUpdated} from "firebase-functions/v2/firestore";
 import * as logger from "firebase-functions/logger";
 import * as admin from "firebase-admin";
@@ -8,6 +7,80 @@ import * as admin from "firebase-admin";
 admin.initializeApp();
 
 setGlobalOptions({maxInstances: 10, region: "asia-northeast1"});
+
+/**
+ * 繰り返しタイプの列挙型（Dartと同期）
+ */
+enum RepeatType {
+  NONE = "none",
+  DAILY = "daily",
+  WEEKLY = "weekly",
+  MONTHLY = "monthly",
+  CUSTOM = "custom",
+}
+
+/**
+ * スケジュールの型定義
+ */
+interface ScheduleData {
+  id: string;
+  repeatType: RepeatType;
+  repeatInterval?: number;
+  nextScheduledDate: admin.firestore.Timestamp;
+  lastCompletedDate?: admin.firestore.Timestamp;
+  startDate?: admin.firestore.Timestamp;
+  requiresCompletion: boolean;
+  status?: string;
+}
+
+/**
+ * 次回予定日を計算（Dartのロジックと同期）
+ * @param {ScheduleData} schedule - スケジュールデータ
+ * @return {Date | null} 次回予定日
+ */
+function calculateNextScheduledDate(schedule: ScheduleData): Date | null {
+  // 基準日: 元のnextScheduledDateを使用（完了不要タスクなので）
+  const baseDate = schedule.nextScheduledDate.toDate();
+
+  switch (schedule.repeatType) {
+  case RepeatType.NONE:
+    return null;
+
+  case RepeatType.DAILY:
+    return new Date(
+      baseDate.getFullYear(),
+      baseDate.getMonth(),
+      baseDate.getDate() + 1
+    );
+
+  case RepeatType.WEEKLY:
+    return new Date(
+      baseDate.getFullYear(),
+      baseDate.getMonth(),
+      baseDate.getDate() + 7
+    );
+
+  case RepeatType.MONTHLY:
+    return new Date(
+      baseDate.getFullYear(),
+      baseDate.getMonth() + 1,
+      baseDate.getDate()
+    );
+
+  case RepeatType.CUSTOM:
+    if (!schedule.repeatInterval || schedule.repeatInterval <= 0) {
+      return null;
+    }
+    return new Date(
+      baseDate.getFullYear(),
+      baseDate.getMonth(),
+      baseDate.getDate() + schedule.repeatInterval
+    );
+
+  default:
+    return null;
+  }
+}
 
 /**
  * 1時間ごとに実行される通知関数（0-23時）
@@ -35,6 +108,7 @@ for (let hour = 0; hour < 24; hour++) {
 
 /**
  * 指定された時刻に通知を送信する共通関数
+ * 最適化: whereクエリで該当ユーザーのみ取得
  * @param {number} hour - 通知を送信する時刻（0-23）
  * @return {Promise<void>}
  */
@@ -43,19 +117,25 @@ async function sendNotificationForHour(hour: number): Promise<void> {
   const messaging = admin.messaging();
 
   try {
-    // 朝の通知を有効にしていて、この時刻を設定しているユーザー
-    const morningUsersSnapshot = await db
+    // 朝の通知が有効で、この時刻に設定しているユーザーを取得
+    const morningUsersPromise = db
       .collection("users")
       .where("morningEnabled", "==", true)
       .where("morningHour", "==", hour)
       .get();
 
-    // 夜の通知を有効にしていて、この時刻を設定しているユーザー
-    const eveningUsersSnapshot = await db
+    // 夜の通知が有効で、この時刻に設定しているユーザーを取得
+    const eveningUsersPromise = db
       .collection("users")
       .where("eveningEnabled", "==", true)
       .where("eveningHour", "==", hour)
       .get();
+
+    // 並列で取得
+    const [morningUsersSnapshot, eveningUsersSnapshot] = await Promise.all([
+      morningUsersPromise,
+      eveningUsersPromise,
+    ]);
 
     // 重複を排除してユーザーIDのセットを作成
     const userIds = new Set<string>();
@@ -63,6 +143,10 @@ async function sendNotificationForHour(hour: number): Promise<void> {
     eveningUsersSnapshot.docs.forEach((doc) => userIds.add(doc.id));
 
     logger.info(`${hour}時: ${userIds.size}人のユーザーに通知送信`);
+
+    if (userIds.size === 0) {
+      return;
+    }
 
     // 各ユーザーに通知を送信
     const promises = Array.from(userIds).map((userId) =>
@@ -105,26 +189,44 @@ async function sendNotificationToUser(
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
 
-    const schedulesSnapshot = await db
+    // 今日のタスクを取得（範囲クエリのみ使用）
+    const todaySchedulesSnapshot = await db
       .collection("users")
       .doc(userId)
       .collection("schedules")
-      .where("scheduledDate", ">=", admin.firestore.Timestamp.fromDate(today))
-      .where("scheduledDate", "<", admin.firestore.Timestamp.fromDate(tomorrow))
-      .where("requiresCompletion", "==", true)
+      .where(
+        "nextScheduledDate",
+        ">=",
+        admin.firestore.Timestamp.fromDate(today)
+      )
+      .where(
+        "nextScheduledDate",
+        "<",
+        admin.firestore.Timestamp.fromDate(tomorrow)
+      )
       .get();
+
+    // クライアント側でrequiresCompletionをフィルタリング
+    const todayCount = todaySchedulesSnapshot.docs.filter(
+      (doc) => doc.data().requiresCompletion === true
+    ).length;
 
     // 遅延タスクを取得（過去の未完了タスク）
-    const overdueSnapshot = await db
+    const overdueSchedulesSnapshot = await db
       .collection("users")
       .doc(userId)
       .collection("schedules")
-      .where("scheduledDate", "<", admin.firestore.Timestamp.fromDate(today))
-      .where("requiresCompletion", "==", true)
+      .where(
+        "nextScheduledDate",
+        "<",
+        admin.firestore.Timestamp.fromDate(today)
+      )
       .get();
 
-    const todayCount = schedulesSnapshot.size;
-    const overdueCount = overdueSnapshot.size;
+    // クライアント側でrequiresCompletionをフィルタリング
+    const overdueCount = overdueSchedulesSnapshot.docs.filter(
+      (doc) => doc.data().requiresCompletion === true
+    ).length;
 
     // 通知メッセージを作成
     const title = "タスクのお知らせ";
@@ -173,6 +275,9 @@ async function sendNotificationToUser(
     logger.info(`[${userId}] 通知送信成功: ${body}`);
   } catch (error) {
     const errorCode = (error as {code?: string}).code;
+    const errorMessage = (error as {message?: string}).message;
+
+    // 無効なトークンの場合は削除
     if (
       errorCode === "messaging/invalid-registration-token" ||
       errorCode === "messaging/registration-token-not-registered"
@@ -181,34 +286,28 @@ async function sendNotificationToUser(
       await db.collection("users").doc(userId).update({
         fcmToken: admin.firestore.FieldValue.delete(),
       });
+    } else if (
+      // APNS認証エラーの場合
+      errorCode === "messaging/third-party-auth-error" ||
+      errorMessage?.includes("Auth error from APNS")
+    ) {
+      logger.error(
+        `[${userId}] APNS認証エラー。Firebase ConsoleでAPNS証明書を確認してください`,
+        {errorCode, errorMessage}
+      );
+      // APNS認証エラーの場合もトークンを削除（再登録を促す）
+      await db.collection("users").doc(userId).update({
+        fcmToken: admin.firestore.FieldValue.delete(),
+      });
     } else {
-      logger.error(`[${userId}] 通知送信エラー:`, error);
+      // その他のエラー
+      logger.error(
+        `[${userId}] 通知送信エラー`,
+        {errorCode, errorMessage, error}
+      );
     }
   }
 }
-
-/**
- * テスト用の手動実行可能な関数
- * 現在の時刻の通知をテストで送信
- */
-export const sendTestNotification = onCall(async (request) => {
-  const userId = request.auth?.uid;
-  if (!userId) {
-    throw new Error("認証が必要です");
-  }
-
-  const currentHour = new Date().getHours();
-  const db = admin.firestore();
-  const messaging = admin.messaging();
-
-  logger.info(`[テスト通知] ユーザー: ${userId}, 時刻: ${currentHour}`);
-  await sendNotificationToUser(userId, currentHour, db, messaging);
-
-  return {
-    success: true,
-    message: `${currentHour}時の通知をテスト送信しました`,
-  };
-});
 
 /**
  * グループタスク完了時の通知
@@ -244,6 +343,12 @@ export const notifyGroupTaskCompletion = onDocumentUpdated(
     // 完了したメンバーIDを取得
     const completedByMemberId = afterData.completedByMemberId;
     if (!completedByMemberId) {
+      return;
+    }
+
+    // このトリガーが完了者本人のドキュメント更新でない場合はスキップ
+    // （バッチ更新で全メンバーのドキュメントが更新されるが、通知は1回だけ）
+    if (event.params.userId !== completedByMemberId) {
       return;
     }
 
@@ -332,6 +437,9 @@ export const notifyGroupTaskCompletion = onDocumentUpdated(
             );
           } catch (error) {
             const errorCode = (error as {code?: string}).code;
+            const errorMessage = (error as {message?: string}).message;
+
+            // 無効なトークンの場合は削除
             if (
               errorCode === "messaging/invalid-registration-token" ||
               errorCode === "messaging/registration-token-not-registered"
@@ -340,8 +448,25 @@ export const notifyGroupTaskCompletion = onDocumentUpdated(
               await db.collection("users").doc(memberId).update({
                 fcmToken: admin.firestore.FieldValue.delete(),
               });
+            } else if (
+              // APNS認証エラーの場合
+              errorCode === "messaging/third-party-auth-error" ||
+              errorMessage?.includes("Auth error from APNS")
+            ) {
+              logger.error(
+                `[${memberId}] APNS認証エラー。Firebase ConsoleでAPNS証明書を確認してください`,
+                {errorCode, errorMessage}
+              );
+              // APNS認証エラーの場合もトークンを削除（再登録を促す）
+              await db.collection("users").doc(memberId).update({
+                fcmToken: admin.firestore.FieldValue.delete(),
+              });
             } else {
-              logger.error(`[${memberId}] 通知送信エラー:`, error);
+              // その他のエラー
+              logger.error(
+                `[${memberId}] 通知送信エラー`,
+                {errorCode, errorMessage, error}
+              );
             }
           }
         }
@@ -353,6 +478,101 @@ export const notifyGroupTaskCompletion = onDocumentUpdated(
       );
     } catch (error) {
       logger.error("グループタスク完了通知エラー:", error);
+    }
+  }
+);
+
+/**
+ * 完了不要の繰り返しタスクの予定日を自動更新
+ * 毎日0時（日本時間）に実行
+ */
+export const updateNonRequiredSchedules = onSchedule(
+  {
+    schedule: "0 0 * * *", // 毎日0時（JST）
+    timeZone: "Asia/Tokyo",
+  },
+  async () => {
+    logger.info("[完了不要タスク更新] 処理開始");
+
+    const db = admin.firestore();
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    try {
+      // 完了不要 & 予定日が過去 & 繰り返しあり
+      const schedulesSnapshot = await db
+        .collectionGroup("schedules")
+        .where("requiresCompletion", "==", false)
+        .where(
+          "nextScheduledDate",
+          "<",
+          admin.firestore.Timestamp.fromDate(today)
+        )
+        .get();
+
+      logger.info(`[完了不要タスク更新] 対象: ${schedulesSnapshot.size}件`);
+
+      if (schedulesSnapshot.empty) {
+        logger.info("[完了不要タスク更新] 更新対象なし");
+        return;
+      }
+
+      // バッチ処理（500件ごと）
+      const batches: admin.firestore.WriteBatch[] = [];
+      let currentBatch = db.batch();
+      let operationCount = 0;
+      let updatedCount = 0;
+
+      for (const doc of schedulesSnapshot.docs) {
+        const data = doc.data() as ScheduleData;
+
+        // 完了済みは除外
+        if (data.status === "completed") {
+          continue;
+        }
+
+        // 繰り返しがない場合は除外
+        if (data.repeatType === RepeatType.NONE) {
+          continue;
+        }
+
+        // 次回予定日を計算
+        const nextDate = calculateNextScheduledDate(data);
+
+        if (!nextDate) {
+          logger.warn(`[${doc.id}] 次回予定日の計算失敗`);
+          continue;
+        }
+
+        // バッチに追加
+        currentBatch.update(doc.ref, {
+          nextScheduledDate: admin.firestore.Timestamp.fromDate(nextDate),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+
+        operationCount++;
+        updatedCount++;
+
+        // 500件ごとにバッチをコミット
+        if (operationCount >= 500) {
+          batches.push(currentBatch);
+          currentBatch = db.batch();
+          operationCount = 0;
+        }
+      }
+
+      // 残りのバッチを追加
+      if (operationCount > 0) {
+        batches.push(currentBatch);
+      }
+
+      // 全バッチをコミット
+      await Promise.all(batches.map((batch) => batch.commit()));
+
+      logger.info(`[完了不要タスク更新] 完了: ${updatedCount}件更新`);
+    } catch (error) {
+      logger.error("[完了不要タスク更新] エラー:", error);
+      throw error;
     }
   }
 );

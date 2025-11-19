@@ -78,13 +78,17 @@ class UserProfileRepository {
       final doc = await _firestore.collection('users').doc(uid).get();
       if (!doc.exists) {
         final now = DateTime.now();
-        final profile = UserProfile(
-          uid: uid,
-          displayName: displayName,
-          createdAt: now,
-          updatedAt: now,
-        );
-        await setUserProfile(profile);
+        // 初回作成時は、プロフィール情報と通知設定のデフォルト値を一緒に保存
+        await _firestore.collection('users').doc(uid).set({
+          'displayName': displayName,
+          'createdAt': Timestamp.fromDate(now),
+          'updatedAt': Timestamp.fromDate(now),
+          // 通知設定のデフォルト値
+          'morningEnabled': true,
+          'morningHour': 8,
+          'eveningEnabled': true,
+          'eveningHour': 20,
+        });
         if (kDebugMode) {
           print('[UserProfileRepository] 初回プロフィール作成: $uid (名前: $displayName)');
         }

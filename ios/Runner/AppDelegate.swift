@@ -14,17 +14,13 @@ import FirebaseMessaging
     // FCMの設定
     if #available(iOS 10.0, *) {
       UNUserNotificationCenter.current().delegate = self
-      let authOptions: UNAuthorizationOptions = [.alert, .badge, .sound]
-      UNUserNotificationCenter.current().requestAuthorization(
-        options: authOptions,
-        completionHandler: { _, _ in }
-      )
     } else {
       let settings: UIUserNotificationSettings =
         UIUserNotificationSettings(types: [.alert, .badge, .sound], categories: nil)
       application.registerUserNotificationSettings(settings)
     }
     
+    // リモート通知の登録
     application.registerForRemoteNotifications()
     Messaging.messaging().delegate = self
     
@@ -32,10 +28,16 @@ import FirebaseMessaging
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
   
-  // FCMトークンの更新を処理
+  // APNSトークンの取得成功時
   override func application(_ application: UIApplication,
                             didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
     Messaging.messaging().apnsToken = deviceToken
+  }
+  
+  // APNSトークンの取得失敗時
+  override func application(_ application: UIApplication,
+                            didFailToRegisterForRemoteNotificationsWithError error: Error) {
+    print("APNSトークン取得失敗: \(error.localizedDescription)")
   }
 }
 
