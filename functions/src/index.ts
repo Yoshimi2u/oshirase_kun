@@ -199,18 +199,27 @@ async function sendNotificationToUser(
       (doc) => !doc.data().completedAt
     ).length;
 
-    // 通知メッセージを作成
-    const title = "タスクのお知らせ";
+    // 通知メッセージを作成（時間帯によってタイトルを変更）
+    let title = "本日のタスクのお知らせ";
+
+    if (hour >= 5 && hour < 12) {
+      title = "おはようございます！";
+    } else if (hour >= 12 && hour < 18) {
+      title = "お疲れ様です！";
+    } else if (hour >= 18 && hour < 23) {
+      title = "今日もお疲れ様でした！";
+    }
+
     let body = "";
 
     if (todayCount === 0 && overdueCount === 0) {
-      body = "今日のタスクはありません";
+      body = "今日のタスクはありません！良い一日を！";
     } else if (todayCount > 0 && overdueCount === 0) {
-      body = `今日は${todayCount}件のタスクがあります`;
+      body = `今日はタスクが${todayCount}件あります！\n今日も一日頑張りましょう！`;
     } else if (todayCount === 0 && overdueCount > 0) {
-      body = `遅延: ${overdueCount}件`;
+      body = `今日は遅延のタスクが${overdueCount}件あります！`;
     } else {
-      body = `今日は${todayCount}件のタスクがあります。遅延: ${overdueCount}件`;
+      body = `今日はタスクが${todayCount}件\n遅延のタスクが${overdueCount}件あります。`;
     }
 
     // FCM通知を送信
@@ -641,7 +650,7 @@ function calculateNextTaskDate(
       nextMonth = 0;
       nextYear++;
     }
-    
+
     // 翌月の末日を取得（翌々月の0日 = 翌月の末日）
     return new Date(nextYear, nextMonth + 1, 0);
   }
