@@ -29,7 +29,79 @@ service cloud.firestore {
                        || request.resource.data.eveningEnabled is bool);
     }
     
-    // ユーザーごとの予定データ
+    // スケジュールテンプレート（繰り返し設定を持つ親要素）
+    // スケジュールテンプレート（繰り返し設定を持つ親要素）
+    // 認証チェックのみ、詳細な権限はアプリ側で制御
+    match /schedule_templates/{templateId} {
+      // 読み取り: 認証済みユーザー（権限チェックはアプリ側）
+      allow read: if request.auth != null;
+      
+      // 作成: 認証済みユーザー（基本的なバリデーションのみ）
+      allow create: if request.auth != null 
+                    && request.resource.data.keys().hasAll([
+                      'userId',
+                      'title', 
+                      'description', 
+                      'repeatType',
+                      'isActive',
+                      'isGroupSchedule',
+                      'createdAt',
+                      'updatedAt'
+                    ])
+                    && request.resource.data.userId is string
+                    && request.resource.data.title is string
+                    && request.resource.data.title.size() > 0
+                    && request.resource.data.description is string
+                    && request.resource.data.repeatType is string
+                    && request.resource.data.isActive is bool
+                    && request.resource.data.isGroupSchedule is bool
+                    && request.resource.data.createdAt is timestamp
+                    && request.resource.data.updatedAt is timestamp;
+      
+      // 更新: 認証済みユーザー（権限チェックはアプリ側）
+      allow update: if request.auth != null;
+      
+      // 削除: 認証済みユーザー（権限チェックはアプリ側）
+      allow delete: if request.auth != null;
+    }
+    
+    // タスク（個別の実行タスク）
+    // 認証チェックのみ、詳細な権限はアプリ側で制御
+    match /tasks/{taskId} {
+      // 読み取り: 認証済みユーザー（権限チェックはアプリ側）
+      allow read: if request.auth != null;
+      
+      // 作成: 認証済みユーザー（基本的なバリデーションのみ）
+      allow create: if request.auth != null 
+                    && request.resource.data.keys().hasAll([
+                      'userId',
+                      'templateId',
+                      'title', 
+                      'description', 
+                      'scheduledDate',
+                      'isGroupSchedule',
+                      'createdAt',
+                      'updatedAt'
+                    ])
+                    && request.resource.data.userId is string
+                    && request.resource.data.templateId is string
+                    && request.resource.data.title is string
+                    && request.resource.data.title.size() > 0
+                    && request.resource.data.description is string
+                    && request.resource.data.scheduledDate is timestamp
+                    && request.resource.data.isGroupSchedule is bool
+                    && request.resource.data.createdAt is timestamp
+                    && request.resource.data.updatedAt is timestamp;
+      
+      // 更新: 認証済みユーザー（権限チェックはアプリ側）
+      allow update: if request.auth != null 
+                    && request.resource.data.updatedAt is timestamp;
+      
+      // 削除: 認証済みユーザー（権限チェックはアプリ側）
+      allow delete: if request.auth != null;
+    }
+    
+    // 旧予定データ（後方互換性のため残す - 非推奨）
     // 認証済みユーザーが自分のデータのみ読み書き可能
     // グループ予定の場合はグループメンバー全員がアクセス可能
     match /users/{userId}/schedules/{scheduleId} {
@@ -139,10 +211,9 @@ service cloud.firestore {
     
     // グループデータ
     match /groups/{groupId} {
-      // グループの読み取り: 認証済みでアクティブなグループ
-      // これにより、メンバー検索クエリ (memberIds arrayContains) も動作する
-      allow read: if request.auth != null 
-                  && resource.data.isActive == true;
+      // グループの読み取り: 認証済みユーザー（Rules内でのget()呼び出しを許可するため）
+      // isActiveのチェックはアプリ側で行う
+      allow read: if request.auth != null;
       
       // グループの作成: 認証済みユーザーが自分をオーナーとして作成
       allow create: if request.auth != null

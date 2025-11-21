@@ -4,7 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 enum RepeatType {
   none, // 繰り返しなし
   daily, // 毎日
-  weekly, // 毎週
+  customWeekly, // 曜日指定
   monthly, // 毎月
   custom, // カスタム（〇日ごと）
 }
@@ -23,6 +23,8 @@ class Schedule {
   final String description;
   final RepeatType repeatType; // 繰り返しタイプ
   final int? repeatInterval; // カスタム繰り返しの間隔（日数）
+  final List<int>? selectedWeekdays; // 選択された曜日リスト（1=月曜, 7=日曜）
+  final int? monthlyDay; // 毎月の指定日（1〜28）
   final DateTime? startDate; // 最初の予定日（繰り返し開始日）
   final DateTime? endDate; // 繰り返し終了日（任意）
   final bool isActive; // 通知の有効/無効
@@ -48,6 +50,8 @@ class Schedule {
     required this.description,
     this.repeatType = RepeatType.none,
     this.repeatInterval,
+    this.selectedWeekdays,
+    this.monthlyDay,
     this.startDate,
     this.endDate,
     this.isActive = true,
@@ -75,6 +79,8 @@ class Schedule {
         orElse: () => RepeatType.none,
       ),
       repeatInterval: data['repeatInterval'],
+      selectedWeekdays: (data['selectedWeekdays'] as List<dynamic>?)?.map((e) => e as int).toList(),
+      monthlyDay: data['monthlyDay'],
       startDate: data['startDate'] != null ? (data['startDate'] as Timestamp).toDate() : null,
       endDate: data['endDate'] != null ? (data['endDate'] as Timestamp).toDate() : null,
       isActive: data['isActive'] ?? true,
@@ -99,6 +105,8 @@ class Schedule {
       'description': description,
       'repeatType': repeatType.toString(),
       'repeatInterval': repeatInterval,
+      'selectedWeekdays': selectedWeekdays,
+      'monthlyDay': monthlyDay,
       'startDate': startDate != null ? Timestamp.fromDate(startDate!) : null,
       'endDate': endDate != null ? Timestamp.fromDate(endDate!) : null,
       'isActive': isActive,
@@ -122,6 +130,8 @@ class Schedule {
     String? description,
     RepeatType? repeatType,
     int? repeatInterval,
+    List<int>? selectedWeekdays,
+    int? monthlyDay,
     DateTime? startDate,
     DateTime? endDate,
     bool? isActive,
@@ -142,6 +152,8 @@ class Schedule {
       description: description ?? this.description,
       repeatType: repeatType ?? this.repeatType,
       repeatInterval: repeatInterval ?? this.repeatInterval,
+      selectedWeekdays: selectedWeekdays ?? this.selectedWeekdays,
+      monthlyDay: monthlyDay ?? this.monthlyDay,
       startDate: startDate ?? this.startDate,
       endDate: endDate ?? this.endDate,
       isActive: isActive ?? this.isActive,
@@ -221,19 +233,26 @@ class Schedule {
           baseDate.day + 1,
         );
 
-      case RepeatType.weekly:
-        return DateTime(
-          baseDate.year,
-          baseDate.month,
-          baseDate.day + 7,
-        );
+      case RepeatType.customWeekly:
+        // 複数曜日指定
+        if (selectedWeekdays == null || selectedWeekdays!.isEmpty) return null;
+        return _findNextWeekday(baseDate, selectedWeekdays!);
 
       case RepeatType.monthly:
-        return DateTime(
-          baseDate.year,
-          baseDate.month + 1,
-          baseDate.day,
-        );
+        // monthlyDayが指定されている場合はその日を使用
+        final targetDay = monthlyDay ?? baseDate.day;
+        // 28日を超える場合は28日に制限
+        final day = targetDay > 28 ? 28 : targetDay;
+
+        // 次の月の同じ日を計算
+        int nextMonth = baseDate.month + 1;
+        int nextYear = baseDate.year;
+        if (nextMonth > 12) {
+          nextMonth = 1;
+          nextYear++;
+        }
+
+        return DateTime(nextYear, nextMonth, day);
 
       case RepeatType.custom:
         if (repeatInterval == null || repeatInterval! <= 0) return null;
@@ -245,6 +264,23 @@ class Schedule {
     }
   }
 
+  /// 指定された曜日リストから次回の日付を検索
+  DateTime _findNextWeekday(DateTime baseDate, List<int> weekdays) {
+    DateTime nextDate = DateTime(baseDate.year, baseDate.month, baseDate.day + 1);
+
+    // 最大14日先まで検索（2週間分）
+    for (int i = 0; i < 14; i++) {
+      // DateTime.weekdayは1=月曜, 7=日曜
+      if (weekdays.contains(nextDate.weekday)) {
+        return nextDate;
+      }
+      nextDate = nextDate.add(const Duration(days: 1));
+    }
+
+    // 見つからない場合は翌日を返す（フォールバック）
+    return DateTime(baseDate.year, baseDate.month, baseDate.day + 1);
+  }
+
   /// 繰り返しタイプの日本語表示
   String get repeatTypeLabel {
     switch (repeatType) {
@@ -252,8 +288,13 @@ class Schedule {
         return '繰り返しなし';
       case RepeatType.daily:
         return '毎日';
-      case RepeatType.weekly:
-        return '毎週';
+      case RepeatType.customWeekly:
+        if (selectedWeekdays == null || selectedWeekdays!.isEmpty) {
+          return '曜日指定';
+        }
+        final weekdayNames = ['月', '火', '水', '木', '金', '土', '日'];
+        final names = selectedWeekdays!.map((day) => weekdayNames[day - 1]).join('・');
+        return '毎週（$names）';
       case RepeatType.monthly:
         return '毎月';
       case RepeatType.custom:

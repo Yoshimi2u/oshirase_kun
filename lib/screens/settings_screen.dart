@@ -299,7 +299,11 @@ class SettingsScreen extends ConsumerWidget {
   Future<void> _selectMorningHour(BuildContext context, WidgetRef ref, int currentHour) async {
     final int? picked = await showDialog<int>(
       context: context,
-      builder: (context) => _HourPickerDialog(initialHour: currentHour),
+      builder: (context) => _HourPickerDialog(
+        initialHour: currentHour,
+        minHour: 0,
+        maxHour: 11,
+      ),
     );
 
     if (picked != null) {
@@ -311,7 +315,11 @@ class SettingsScreen extends ConsumerWidget {
   Future<void> _selectEveningHour(BuildContext context, WidgetRef ref, int currentHour) async {
     final int? picked = await showDialog<int>(
       context: context,
-      builder: (context) => _HourPickerDialog(initialHour: currentHour),
+      builder: (context) => _HourPickerDialog(
+        initialHour: currentHour,
+        minHour: 12,
+        maxHour: 23,
+      ),
     );
 
     if (picked != null) {
@@ -344,30 +352,39 @@ class SettingsScreen extends ConsumerWidget {
 /// 時刻（時）選択ダイアログ
 class _HourPickerDialog extends StatelessWidget {
   final int initialHour;
+  final int minHour;
+  final int maxHour;
 
-  const _HourPickerDialog({required this.initialHour});
+  const _HourPickerDialog({
+    required this.initialHour,
+    this.minHour = 0,
+    this.maxHour = 23,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final hours = List.generate(maxHour - minHour + 1, (index) => minHour + index);
+
     return AlertDialog(
       title: const Text('通知時刻を選択'),
       content: SizedBox(
         width: double.maxFinite,
         height: 400,
         child: ListView.builder(
-          itemCount: 24,
+          itemCount: hours.length,
           itemBuilder: (context, index) {
-            final isSelected = index == initialHour;
+            final hour = hours[index];
+            final isSelected = hour == initialHour;
             return ListTile(
               title: Text(
-                '${index.toString().padLeft(2, '0')}:00',
+                '${hour.toString().padLeft(2, '0')}:00',
                 style: TextStyle(
                   fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
                   color: isSelected ? Colors.blue : null,
                 ),
               ),
               selected: isSelected,
-              onTap: () => Navigator.of(context).pop(index),
+              onTap: () => Navigator.of(context).pop(hour),
             );
           },
         ),

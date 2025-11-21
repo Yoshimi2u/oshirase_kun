@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../services/auth_service.dart';
 import '../services/loading_service.dart';
 import '../utils/toast_utils.dart';
+import '../constants/app_messages.dart';
 
 class AccountScreen extends ConsumerStatefulWidget {
   const AccountScreen({super.key});
@@ -56,7 +57,7 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
     } catch (e) {
       await LoadingService.hide(withSuccess: false);
       if (!mounted) return;
-      ToastUtils.showError('サインインに失敗しました: $e');
+      ToastUtils.showError(AppMessages.errorSignInFailed);
     }
   }
 
@@ -86,7 +87,7 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
     } catch (e) {
       await LoadingService.hide(withSuccess: false);
       if (!mounted) return;
-      ToastUtils.showError('アカウント登録に失敗しました: $e');
+      ToastUtils.showError(AppMessages.errorRegisterFailed);
     }
   }
 
@@ -96,7 +97,7 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
       builder: (ctx) {
         return AlertDialog(
           title: const Text('サインアウト'),
-          content: const Text('サインアウトしますか？\n匿名アカウントに戻り、アプリが再起動されます。'),
+          content: const Text('サインアウトしますか？'),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(ctx).pop(false),

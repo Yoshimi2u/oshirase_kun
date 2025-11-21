@@ -16,9 +16,9 @@ class NotificationSettings {
   factory NotificationSettings.defaultSettings() {
     return NotificationSettings(
       morningEnabled: true,
-      morningHour: 8,
+      morningHour: 7,
       eveningEnabled: true,
-      eveningHour: 20,
+      eveningHour: 19,
     );
   }
 
@@ -26,9 +26,9 @@ class NotificationSettings {
   factory NotificationSettings.fromFirestore(Map<String, dynamic> data) {
     return NotificationSettings(
       morningEnabled: data['morningEnabled'] as bool? ?? true,
-      morningHour: data['morningHour'] as int? ?? 8,
+      morningHour: data['morningHour'] as int? ?? 7,
       eveningEnabled: data['eveningEnabled'] as bool? ?? true,
-      eveningHour: data['eveningHour'] as int? ?? 20,
+      eveningHour: data['eveningHour'] as int? ?? 19,
     );
   }
 

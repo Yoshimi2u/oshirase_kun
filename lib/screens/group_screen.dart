@@ -4,8 +4,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/group.dart';
+import '../models/group_with_roles.dart';
+import '../models/group_role.dart';
 import '../providers/group_provider.dart';
 import '../utils/toast_utils.dart';
+import '../constants/app_messages.dart';
 
 /// グループ管理管理画面
 class GroupScreen extends ConsumerWidget {
@@ -639,6 +642,9 @@ class _GroupCard extends ConsumerWidget {
 
   /// メンバー一覧を表示
   void _showMembersList(BuildContext context, WidgetRef ref) {
+    final currentUserId = FirebaseAuth.instance.currentUser?.uid;
+    if (currentUserId == null) return;
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -647,82 +653,335 @@ class _GroupCard extends ConsumerWidget {
         minChildSize: 0.5,
         maxChildSize: 0.95,
         expand: false,
-        builder: (context, scrollController) => SafeArea(
-          child: Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Row(
-                  children: [
-                    const Icon(Icons.people),
-                    const SizedBox(width: 8),
-                    Text(
-                      'メンバー一覧 (${group.memberCount}人)',
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
+        builder: (context, scrollController) => FutureBuilder<GroupWithRoles?>(
+          future: ref.read(groupRepositoryProvider).getGroupWithRoles(group.id),
+          builder: (context, groupSnapshot) {
+            if (!groupSnapshot.hasData) {
+              return const Center(child: CircularProgressIndicator());
+            }
+
+            final groupWithRoles = groupSnapshot.data;
+            if (groupWithRoles == null) {
+              return const Center(child: Text('グループ情報の取得に失敗しました'));
+            }
+
+            return SafeArea(
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.people),
+                        const SizedBox(width: 8),
+                        Text(
+                          'メンバー一覧 (${groupWithRoles.memberCount}人)',
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
-              ),
-              const Divider(height: 1),
-              Expanded(
-                child: ListView.builder(
-                  controller: scrollController,
-                  itemCount: group.memberIds.length,
-                  itemBuilder: (context, index) {
-                    final memberId = group.memberIds[index];
-                    final isOwner = memberId == group.ownerId;
+                  ),
+                  const Divider(height: 1),
+                  Expanded(
+                    child: ListView.builder(
+                      controller: scrollController,
+                      itemCount: groupWithRoles.memberIds.length,
+                      itemBuilder: (context, index) {
+                        final memberId = groupWithRoles.memberIds[index];
+                        final memberRole = groupWithRoles.getRoleForUser(memberId);
 
-                    return FutureBuilder<Map<String, dynamic>?>(
-                      future:
-                          FirebaseFirestore.instance.collection('users').doc(memberId).get().then((doc) => doc.data()),
-                      builder: (context, snapshot) {
-                        final displayName = snapshot.data?['displayName'] as String? ?? 'ユーザー';
-                        final email = snapshot.data?['email'] as String? ?? '';
+                        return FutureBuilder<Map<String, dynamic>?>(
+                          future: FirebaseFirestore.instance
+                              .collection('users')
+                              .doc(memberId)
+                              .get()
+                              .then((doc) => doc.data()),
+                          builder: (context, snapshot) {
+                            final displayName = snapshot.data?['displayName'] as String? ?? 'ユーザー';
+                            final email = snapshot.data?['email'] as String? ?? '';
 
-                        return ListTile(
-                          leading: CircleAvatar(
-                            backgroundColor: isOwner ? Colors.orange : Colors.blue,
-                            child: Text(
-                              displayName.isNotEmpty ? displayName[0] : 'U',
-                              style: const TextStyle(color: Colors.white),
-                            ),
-                          ),
-                          title: Text(
-                            displayName,
-                            style: const TextStyle(fontWeight: FontWeight.w500),
-                          ),
-                          subtitle: email.isNotEmpty ? Text(email) : null,
-                          trailing: isOwner
-                              ? Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                  decoration: BoxDecoration(
-                                    color: Colors.orange.withOpacity(0.1),
-                                    border: Border.all(color: Colors.orange),
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: const Text(
-                                    'オーナー',
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.orange,
-                                    ),
-                                  ),
-                                )
-                              : null,
+                            return ListTile(
+                              leading: CircleAvatar(
+                                backgroundColor: _getRoleColor(memberRole),
+                                child: Text(
+                                  displayName.isNotEmpty ? displayName[0] : 'U',
+                                  style: const TextStyle(color: Colors.white),
+                                ),
+                              ),
+                              title: Text(
+                                displayName,
+                                style: const TextStyle(fontWeight: FontWeight.w500),
+                              ),
+                              subtitle: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  if (email.isNotEmpty) Text(email),
+                                  const SizedBox(height: 4),
+                                  _buildRoleBadge(memberRole),
+                                ],
+                              ),
+                              trailing: _buildMemberActions(
+                                context,
+                                ref,
+                                groupWithRoles,
+                                currentUserId,
+                                memberId,
+                                memberRole,
+                                displayName,
+                              ),
+                            );
+                          },
                         );
                       },
-                    );
-                  },
-                ),
+                    ),
+                  ),
+                ],
               ),
-            ],
-          ),
+            );
+          },
         ),
       ),
     );
+  }
+
+  /// 役割に応じた色を返す
+  Color _getRoleColor(GroupRole? role) {
+    switch (role) {
+      case GroupRole.owner:
+        return Colors.orange;
+      case GroupRole.admin:
+        return Colors.purple;
+      case GroupRole.member:
+        return Colors.blue;
+      default:
+        return Colors.grey;
+    }
+  }
+
+  /// 役割バッジを表示
+  Widget _buildRoleBadge(GroupRole? role) {
+    if (role == null) return const SizedBox.shrink();
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: _getRoleColor(role).withOpacity(0.1),
+        border: Border.all(color: _getRoleColor(role)),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Text(
+        role.displayName,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.bold,
+          color: _getRoleColor(role),
+        ),
+      ),
+    );
+  }
+
+  /// メンバーアクション（役割変更・削除）
+  Widget? _buildMemberActions(
+    BuildContext context,
+    WidgetRef ref,
+    GroupWithRoles groupWithRoles,
+    String currentUserId,
+    String targetUserId,
+    GroupRole? targetRole,
+    String displayName,
+  ) {
+    // 自分自身には操作ボタンを表示しない
+    if (currentUserId == targetUserId) {
+      return null;
+    }
+
+    final canChangeRole = groupWithRoles.canChangeRole(currentUserId);
+    final canRemove = groupWithRoles.canRemoveSpecificMember(currentUserId, targetUserId);
+
+    if (!canChangeRole && !canRemove) {
+      return null;
+    }
+
+    return Consumer(
+      builder: (context, ref, child) {
+        return PopupMenuButton<String>(
+          icon: const Icon(Icons.more_vert),
+          onSelected: (value) async {
+            if (value == 'change_role') {
+              await _showRoleChangeDialog(
+                context,
+                ref,
+                groupWithRoles.id,
+                targetUserId,
+                targetRole,
+                displayName,
+              );
+            } else if (value == 'remove') {
+              await _showRemoveMemberDialog(
+                context,
+                ref,
+                groupWithRoles.id,
+                targetUserId,
+                displayName,
+              );
+            }
+          },
+          itemBuilder: (context) => [
+            if (canChangeRole && targetUserId != groupWithRoles.ownerId)
+              const PopupMenuItem(
+                value: 'change_role',
+                child: Row(
+                  children: [
+                    Icon(Icons.edit, size: 20),
+                    SizedBox(width: 8),
+                    Text('役割を変更'),
+                  ],
+                ),
+              ),
+            if (canRemove)
+              const PopupMenuItem(
+                value: 'remove',
+                child: Row(
+                  children: [
+                    Icon(Icons.remove_circle, size: 20, color: Colors.red),
+                    SizedBox(width: 8),
+                    Text('削除', style: TextStyle(color: Colors.red)),
+                  ],
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+
+  /// 役割変更ダイアログ
+  Future<void> _showRoleChangeDialog(
+    BuildContext context,
+    WidgetRef ref,
+    String groupId,
+    String targetUserId,
+    GroupRole? currentRole,
+    String displayName,
+  ) async {
+    final currentUserId = FirebaseAuth.instance.currentUser?.uid;
+    if (currentUserId == null) return;
+
+    // showDialog の前に repository インスタンスを取得
+    final repository = ref.read(groupRepositoryProvider);
+
+    final newRole = await showDialog<GroupRole>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('$displayName の役割を変更'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            RadioListTile<GroupRole>(
+              title: Text(GroupRole.admin.displayName),
+              subtitle: Text(GroupRole.admin.description),
+              value: GroupRole.admin,
+              groupValue: currentRole,
+              onChanged: (value) => Navigator.pop(context, value),
+            ),
+            RadioListTile<GroupRole>(
+              title: Text(GroupRole.member.displayName),
+              subtitle: Text(GroupRole.member.description),
+              value: GroupRole.member,
+              groupValue: currentRole,
+              onChanged: (value) => Navigator.pop(context, value),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('キャンセル'),
+          ),
+        ],
+      ),
+    );
+
+    if (newRole == null || newRole == currentRole) return;
+
+    if (!context.mounted) return;
+
+    try {
+      await repository.updateMemberRole(
+        groupId: groupId,
+        requestUserId: currentUserId,
+        targetUserId: targetUserId,
+        newRole: newRole,
+      );
+
+      if (context.mounted) {
+        ToastUtils.showSuccess('役割を変更しました');
+        Navigator.pop(context); // メンバー一覧を閉じて再表示
+        _showMembersList(context, ref);
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ToastUtils.showError(AppMessages.errorGroupRoleChangeFailed);
+      }
+    }
+  }
+
+  /// メンバー削除確認ダイアログ
+  Future<void> _showRemoveMemberDialog(
+    BuildContext context,
+    WidgetRef ref,
+    String groupId,
+    String targetUserId,
+    String displayName,
+  ) async {
+    final currentUserId = FirebaseAuth.instance.currentUser?.uid;
+    if (currentUserId == null) return;
+
+    // showDialog の前に repository インスタンスを取得
+    final repository = ref.read(groupRepositoryProvider);
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('メンバーを削除'),
+        content: Text('$displayName をグループから削除しますか？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('キャンセル'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('削除'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    if (!context.mounted) return;
+
+    try {
+      await repository.removeMemberWithPermission(
+        groupId: groupId,
+        requestUserId: currentUserId,
+        targetUserId: targetUserId,
+      );
+
+      if (context.mounted) {
+        ToastUtils.showSuccess('メンバーを削除しました');
+        Navigator.pop(context); // メンバー一覧を閉じて再表示
+        _showMembersList(context, ref);
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ToastUtils.showError(AppMessages.errorGroupMemberDeleteFailed);
+      }
+    }
   }
 }

@@ -81,6 +81,7 @@ final GoRouter router = GoRouter(
       path: '/schedule/edit/:id',
       pageBuilder: (context, state) {
         final id = state.pathParameters['id'];
+        final taskId = state.uri.queryParameters['taskId'];
         final initialDateStr = state.uri.queryParameters['initialDate'];
         DateTime? initialDate;
         if (initialDateStr != null) {
@@ -91,7 +92,11 @@ final GoRouter router = GoRouter(
           }
         }
         return _buildPageWithAnimation(
-          ScheduleFormScreen(scheduleId: id, initialDate: initialDate),
+          ScheduleFormScreen(
+            scheduleId: id,
+            initialDate: initialDate,
+            taskId: taskId,
+          ),
         );
       },
     ),

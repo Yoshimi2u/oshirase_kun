@@ -3,14 +3,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'package:intl/intl.dart';
 import 'package:go_router/go_router.dart';
-import '../models/schedule.dart';
-import '../models/completion_history.dart';
-import '../providers/schedule_provider.dart';
-import '../providers/completion_history_provider.dart';
+import '../models/schedule_instance.dart';
+import '../providers/task_provider.dart';
+import '../providers/schedule_template_provider.dart' as template_provider;
 import '../providers/group_provider.dart';
-import '../utils/toast_utils.dart';
+import '../constants/app_spacing.dart';
+import '../constants/app_messages.dart';
 
-/// カレンダー画面
+/// カレンダー画面 - 新モデル対応
 class CalendarScreen extends ConsumerStatefulWidget {
   const CalendarScreen({super.key});
 
@@ -32,34 +32,42 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final schedulesAsync = ref.watch(schedulesStreamProvider);
+    // カレンダーの表示範囲（前月1日～翌月末日）のタスクを取得
+    final startDate = DateTime(_focusedDay.year, _focusedDay.month - 1, 1);
+    final endDate = DateTime(_focusedDay.year, _focusedDay.month + 2, 0);
 
-    return schedulesAsync.when(
+    final tasksAsync = ref.watch(
+      tasksByDateRangeProvider(
+        DateRangeParams(startDate: startDate, endDate: endDate),
+      ),
+    );
+
+    return tasksAsync.when(
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (error, stack) => const Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(Icons.error_outline, size: 64, color: Colors.red),
-            SizedBox(height: 16),
+            SizedBox(height: AppSpacing.xxl),
             Text(
-              'エラーが発生しました',
+              AppMessages.errorGeneric,
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
-            SizedBox(height: 8),
+            SizedBox(height: AppSpacing.medium),
             Text(
-              '予定の読み込みに失敗しました',
+              AppMessages.taskLoadError,
               style: TextStyle(color: Colors.grey),
             ),
           ],
         ),
       ),
-      data: (schedules) => Column(
+      data: (tasks) => Column(
         children: [
-          _buildCalendar(schedules),
+          _buildCalendar(tasks),
           const Divider(height: 1),
           Expanded(
-            child: _buildScheduleList(schedules),
+            child: _buildScheduleList(tasks),
           ),
         ],
       ),
@@ -67,7 +75,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
   }
 
   /// カレンダーウィジェット
-  Widget _buildCalendar(List<Schedule> schedules) {
+  Widget _buildCalendar(List<Task> tasks) {
     return TableCalendar(
       firstDay: DateTime.utc(2020, 1, 1),
       lastDay: DateTime.utc(2030, 12, 31),
@@ -114,321 +122,181 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
         });
       },
       onPageChanged: (focusedDay) {
-        _focusedDay = focusedDay;
+        setState(() {
+          _focusedDay = focusedDay;
+        });
       },
       eventLoader: (day) {
-        return _getEventsForDay(day, schedules);
+        return _getEventsForDay(day, tasks);
       },
     );
   }
 
-  /// 指定日のイベントを取得
-  List<Schedule> _getEventsForDay(DateTime day, List<Schedule> schedules) {
+  /// 指定日のイベントを取得（新モデル対応）
+  List<Task> _getEventsForDay(DateTime day, List<Task> tasks) {
     final targetDate = DateTime(day.year, day.month, day.day);
-    return schedules.where((schedule) {
-      // 完了履歴をチェック
-      final isCompleted = schedule.completionHistory.any((completedDate) {
-        final completed = DateTime(
-          completedDate.year,
-          completedDate.month,
-          completedDate.day,
-        );
-        return isSameDay(completed, targetDate);
-      });
-
-      // 次回予定日をチェック
-      if (schedule.nextScheduledDate != null) {
-        final scheduleDate = DateTime(
-          schedule.nextScheduledDate!.year,
-          schedule.nextScheduledDate!.month,
-          schedule.nextScheduledDate!.day,
-        );
-        return isSameDay(scheduleDate, targetDate) || isCompleted;
-      }
-
-      // 次回予定日がない場合は完了履歴のみでチェック
-      return isCompleted;
+    return tasks.where((task) {
+      final taskDate = DateTime(
+        task.scheduledDate.year,
+        task.scheduledDate.month,
+        task.scheduledDate.day,
+      );
+      return isSameDay(taskDate, targetDate);
     }).toList();
   }
 
-  /// 選択日の予定リスト
-  Widget _buildScheduleList(List<Schedule> schedules) {
-    // 選択日の完了履歴を取得
-    final completionHistoriesAsync = ref.watch(completionHistoriesByDateProvider(_selectedDay));
+  /// 選択日のタスクリスト（新モデル対応）
+  Widget _buildScheduleList(List<Task> tasks) {
+    // 選択日のタスクをフィルタリング
+    final selectedDayTasks = tasks.where((task) {
+      final taskDate = DateTime(
+        task.scheduledDate.year,
+        task.scheduledDate.month,
+        task.scheduledDate.day,
+      );
+      return isSameDay(taskDate, _selectedDay);
+    }).toList();
 
-    return completionHistoriesAsync.when(
-      loading: () => const Center(child: CircularProgressIndicator()),
-      error: (error, stack) => Center(
-        child: Text('完了履歴の読み込みに失敗しました: $error'),
-      ),
-      data: (completionHistories) {
-        // 選択日に完了したスケジュールIDの一覧
-        final completedScheduleIds = completionHistories.map((h) => h.scheduleId).toSet();
+    // 完了済みと未完了に分類
+    final incompleteTasks = selectedDayTasks.where((task) => task.completedAt == null).toList();
+    final completedTasks = selectedDayTasks.where((task) => task.completedAt != null).toList();
 
-        // 選択日の予定（完了済みを除外）
-        final selectedDaySchedules = schedules.where((schedule) {
-          if (schedule.nextScheduledDate == null) return false;
+    final dateFormat = DateFormat('M月d日(E)', 'ja_JP');
 
-          final scheduleDate = DateTime(
-            schedule.nextScheduledDate!.year,
-            schedule.nextScheduledDate!.month,
-            schedule.nextScheduledDate!.day,
-          );
-
-          // 選択日と一致し、かつ完了済みではない
-          return isSameDay(scheduleDate, _selectedDay) && !completedScheduleIds.contains(schedule.id);
-        }).toList();
-
-        final dateFormat = DateFormat('M月d日(E)', 'ja_JP');
-
-        return Container(
-          color: Theme.of(context).colorScheme.surface,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(16),
+    return Container(
+      color: Theme.of(context).colorScheme.surface,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(AppSpacing.xxl),
+            child: Text(
+              dateFormat.format(_selectedDay),
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+          if (selectedDayTasks.isEmpty)
+            const Expanded(
+              child: Center(
                 child: Text(
-                  dateFormat.format(_selectedDay),
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
+                  AppMessages.noTasksToday,
+                  style: TextStyle(
+                    color: Colors.grey,
+                    fontSize: 16,
                   ),
                 ),
               ),
-              if (selectedDaySchedules.isEmpty && completionHistories.isEmpty)
-                const Expanded(
-                  child: Center(
-                    child: Text(
-                      '予定がありません',
-                      style: TextStyle(
-                        color: Colors.grey,
-                        fontSize: 16,
+            )
+          else
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxl),
+                children: [
+                  // 未完了タスク
+                  if (incompleteTasks.isNotEmpty) ...[
+                    const Padding(
+                      padding: EdgeInsets.only(bottom: AppSpacing.medium),
+                      child: Text(
+                        '未完了',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.blue,
+                        ),
                       ),
                     ),
-                  ),
-                )
-              else
-                Expanded(
-                  child: ListView(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    children: [
-                      // 予定されているタスク
-                      if (selectedDaySchedules.isNotEmpty) ...[
-                        const Padding(
-                          padding: EdgeInsets.only(bottom: 8),
-                          child: Text(
-                            '予定',
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.blue,
-                            ),
-                          ),
-                        ),
-                        ...selectedDaySchedules.map((schedule) => _buildScheduleCard(schedule, false)),
-                      ],
+                    ...incompleteTasks.map((task) => _buildTaskCard(task)),
+                  ],
 
-                      // 完了したタスク
-                      if (completionHistories.isNotEmpty) ...[
-                        const SizedBox(height: 16),
-                        const Padding(
-                          padding: EdgeInsets.only(bottom: 8),
-                          child: Text(
-                            '完了済み',
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.green,
-                            ),
-                          ),
+                  // 完了済みタスク
+                  if (completedTasks.isNotEmpty) ...[
+                    const SizedBox(height: AppSpacing.xxl),
+                    const Padding(
+                      padding: EdgeInsets.only(bottom: AppSpacing.medium),
+                      child: Text(
+                        '完了済み',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.green,
                         ),
-                        ...completionHistories.map((history) => _buildCompletionHistoryCard(history)),
-                      ],
-                    ],
-                  ),
-                ),
-            ],
-          ),
-        );
-      },
+                      ),
+                    ),
+                    ...completedTasks.map((task) => _buildTaskCard(task)),
+                  ],
+                ],
+              ),
+            ),
+        ],
+      ),
     );
   }
 
-  /// 予定カード
-  Widget _buildScheduleCard(Schedule schedule, bool isCompleted) {
-    final status = schedule.getStatus();
-
-    // ステータスに応じた左アクセントバーの色を取得
-    Color getAccentColor() {
-      if (isCompleted) return Colors.green;
-      switch (status) {
-        case ScheduleStatus.overdue:
-          return Colors.red;
-        case ScheduleStatus.pending:
-          return Colors.blue;
-        case ScheduleStatus.completed:
-          return Colors.green;
-      }
-    }
+  /// タスクカード（新モデル対応）
+  Widget _buildTaskCard(Task task) {
+    final isCompleted = task.completedAt != null;
 
     return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      margin: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.cardMarginHorizontal,
+        vertical: AppSpacing.cardMarginVertical,
+      ),
       elevation: 2,
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: isCompleted
             ? null // 完了済みタスクは編集不可
-            : () {
-                // nextScheduledDateがある場合はクエリパラメータとして渡す
-                final uri = Uri(
-                  path: '/schedule/edit/${schedule.id}',
-                  queryParameters: schedule.nextScheduledDate != null
-                      ? {'initialDate': schedule.nextScheduledDate!.toIso8601String()}
-                      : null,
-                );
-                context.push(uri.toString());
+            : () async {
+                // テンプレートIDからテンプレート情報を取得して編集画面へ（taskIdも渡す）
+                final templateRepository = ref.read(template_provider.scheduleTemplateRepositoryProvider);
+                final template = await templateRepository.getTemplate(task.templateId);
+
+                if (template != null) {
+                  if (!mounted) return;
+                  final uri = Uri(
+                    path: '/schedule/edit/${task.templateId}',
+                    queryParameters: {
+                      'initialDate': task.scheduledDate.toIso8601String(),
+                      'taskId': task.id,
+                    },
+                  );
+                  context.push(uri.toString());
+                }
               },
         child: IntrinsicHeight(
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // 左アクセントバー
-              Container(
-                width: 4,
-                color: getAccentColor(),
-              ),
               // メインコンテンツ
               Expanded(
                 child: Padding(
-                  padding: const EdgeInsets.all(12),
+                  padding: const EdgeInsets.all(AppSpacing.cardPadding),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // グループバッジ（設定されている場合）
-                      if (schedule.isGroupSchedule && schedule.groupId != null) ...[
-                        const SizedBox(height: 6),
-                        Consumer(
-                          builder: (context, ref, child) {
-                            final groupAsync = ref.watch(groupProvider(schedule.groupId!));
-                            return groupAsync.when(
-                              data: (group) {
-                                if (group == null) {
-                                  return Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                    decoration: BoxDecoration(
-                                      color: Colors.blue.withOpacity(0.1),
-                                      borderRadius: BorderRadius.circular(4),
-                                    ),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Icon(Icons.group, size: 14, color: Colors.blue[700]),
-                                        const SizedBox(width: 2),
-                                        Text(
-                                          'グループ',
-                                          style: TextStyle(
-                                            fontSize: 11,
-                                            color: Colors.blue[700],
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  );
-                                }
-                                return Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                  decoration: BoxDecoration(
-                                    color: Colors.blue.withOpacity(0.1),
-                                    borderRadius: BorderRadius.circular(4),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(Icons.group, size: 14, color: Colors.blue[700]),
-                                      const SizedBox(width: 2),
-                                      Text(
-                                        group.name,
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          color: Colors.blue[700],
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                );
-                              },
-                              loading: () => Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: Colors.blue.withOpacity(0.1),
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(Icons.group, size: 14, color: Colors.blue[700]),
-                                    const SizedBox(width: 2),
-                                    Text(
-                                      'グループ',
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        color: Colors.blue[700],
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              error: (_, __) => Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: Colors.blue.withOpacity(0.1),
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(Icons.group, size: 14, color: Colors.blue[700]),
-                                    const SizedBox(width: 2),
-                                    Text(
-                                      'グループ',
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        color: Colors.blue[700],
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            );
-                          },
-                        ),
+                      // グループタスク表示
+                      if (task.isGroupSchedule && task.groupId != null) ...[
+                        _GroupBadge(groupId: task.groupId!),
+                        const SizedBox(height: AppSpacing.medium),
                       ],
-                      const SizedBox(height: 8),
-                      // タイトルと通知アイコン
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              schedule.title,
-                              style: TextStyle(
-                                fontSize: 17,
-                                fontWeight: FontWeight.bold,
-                                height: 1.3,
-                                color: isCompleted ? Colors.grey : null,
-                              ),
-                            ),
-                          ),
-                        ],
+                      // タイトル
+                      Text(
+                        task.title,
+                        style: TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.bold,
+                          height: 1.3,
+                          color: isCompleted ? Colors.grey : null,
+                          decoration: isCompleted ? TextDecoration.lineThrough : null,
+                        ),
                       ),
-                      if (schedule.description.isNotEmpty) ...[
-                        const SizedBox(height: 6),
+                      if (task.description.isNotEmpty) ...[
+                        const SizedBox(height: AppSpacing.small),
                         Text(
-                          schedule.description,
+                          task.description,
                           style: TextStyle(
                             fontSize: 14,
                             color: isCompleted ? Colors.grey : Colors.grey[700],
@@ -438,154 +306,48 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                           overflow: TextOverflow.ellipsis,
                         ),
                       ],
-                      const SizedBox(height: 10),
-                      // 繰り返し情報
-                      Row(
-                        children: [
-                          Icon(
-                            _getRepeatIcon(schedule.repeatType),
-                            size: 18,
-                            color: isCompleted
-                                ? Colors.grey
-                                : (Theme.of(context).brightness == Brightness.dark
-                                    ? Colors.grey[300]
-                                    : Colors.grey[800]),
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            schedule.repeatTypeLabel,
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: isCompleted
-                                  ? Colors.grey
-                                  : (Theme.of(context).brightness == Brightness.dark
-                                      ? Colors.grey[300]
-                                      : Colors.grey[800]),
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ],
-                      ),
-                      // 完了ボタン（未完了で完了必須の場合）
-                      if (schedule.requiresCompletion && !isCompleted) ...[
-                        const SizedBox(height: 10),
-                        SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton.icon(
-                            onPressed: () async {
-                              await ref.read(scheduleNotifierProvider.notifier).completeSchedule(schedule);
-                              if (context.mounted) {
-                                ToastUtils.showSuccess('タスクを完了しました');
-                              }
-                            },
-                            icon: const Icon(Icons.check),
-                            label: const Text('完了する'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.green,
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(vertical: 12),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  /// 完了履歴カード
-  Widget _buildCompletionHistoryCard(CompletionHistory history) {
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      elevation: 2,
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: null, // 完了履歴は編集不可
-        child: IntrinsicHeight(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // 左アクセントバー（緑色）
-              Container(
-                width: 4,
-                color: Colors.green,
-              ),
-              // メインコンテンツ
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // タイトル
-                      Text(
-                        history.scheduleTitle,
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      // 完了者情報（グループタスクの場合）
-                      if (history.groupId != null && history.completedByMemberName != null) ...[
+                      // 完了日時表示（完了済みの場合）
+                      if (isCompleted && task.completedAt != null) ...[
+                        const SizedBox(height: AppSpacing.medium),
                         Row(
                           children: [
                             const Icon(Icons.check_circle, size: 16, color: Colors.green),
-                            const SizedBox(width: 4),
+                            const SizedBox(width: AppSpacing.xs),
                             Text(
-                              '${history.completedByMemberName}さんが完了',
-                              style: TextStyle(
+                              '完了: ${DateFormat('HH:mm', 'ja_JP').format(task.completedAt!)}',
+                              style: const TextStyle(
                                 fontSize: 12,
-                                color: Colors.grey[600],
+                                color: Colors.green,
+                                fontWeight: FontWeight.w500,
                               ),
                             ),
                           ],
                         ),
-                        const SizedBox(height: 4),
                       ],
-                      // グループバッジ
-                      if (history.groupId != null) ...[
-                        Consumer(
-                          builder: (context, ref, child) {
-                            final groupAsync = ref.watch(groupProvider(history.groupId!));
-                            return groupAsync.when(
-                              data: (group) {
-                                if (group == null) return const SizedBox.shrink();
-                                return Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                  decoration: BoxDecoration(
-                                    color: Colors.blue.withOpacity(0.1),
-                                    borderRadius: BorderRadius.circular(4),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(Icons.group, size: 14, color: Colors.blue[700]),
-                                      const SizedBox(width: 2),
-                                      Text(
-                                        group.name,
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          color: Colors.blue[700],
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                );
-                              },
-                              loading: () => const SizedBox.shrink(),
-                              error: (_, __) => const SizedBox.shrink(),
-                            );
-                          },
+                      // 繰り返し情報を表示
+                      if (task.hasRepeat)
+                        Padding(
+                          padding: const EdgeInsets.only(top: AppSpacing.medium),
+                          child: Row(
+                            children: [
+                              Icon(Icons.repeat,
+                                  size: 16,
+                                  color: Theme.of(context).brightness == Brightness.dark
+                                      ? Colors.grey[400]
+                                      : Colors.grey[600]),
+                              const SizedBox(width: AppSpacing.xs),
+                              Text(
+                                task.repeatDisplayText,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Theme.of(context).brightness == Brightness.dark
+                                      ? Colors.grey[400]
+                                      : Colors.grey[600],
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
-                      ],
                     ],
                   ),
                 ),
@@ -596,19 +358,123 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
       ),
     );
   }
+}
 
-  IconData _getRepeatIcon(RepeatType repeatType) {
-    switch (repeatType) {
-      case RepeatType.daily:
-        return Icons.repeat;
-      case RepeatType.weekly:
-        return Icons.calendar_view_week;
-      case RepeatType.monthly:
-        return Icons.calendar_today;
-      case RepeatType.custom:
-        return Icons.event_repeat;
-      case RepeatType.none:
-        return Icons.event;
-    }
+/// グループバッジ
+class _GroupBadge extends ConsumerWidget {
+  final String groupId;
+
+  const _GroupBadge({required this.groupId});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final groupAsync = ref.watch(groupProvider(groupId));
+
+    return groupAsync.when(
+      data: (group) {
+        if (group == null) {
+          return Container(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.small,
+              vertical: AppSpacing.xxs,
+            ),
+            decoration: BoxDecoration(
+              color: Colors.blue.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.group, size: 16, color: Colors.blue[700]),
+                const SizedBox(width: AppSpacing.xxs),
+                Text(
+                  'グループ',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Colors.blue[700],
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+        return Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.small,
+            vertical: AppSpacing.xxs,
+          ),
+          decoration: BoxDecoration(
+            color: Colors.blue.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.group, size: 16, color: Colors.blue[700]),
+              const SizedBox(width: AppSpacing.xxs),
+              Text(
+                group.name,
+                style: TextStyle(
+                  fontSize: 11,
+                  color: Colors.blue[700],
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+      loading: () => Container(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.small,
+          vertical: AppSpacing.xxs,
+        ),
+        decoration: BoxDecoration(
+          color: Colors.blue.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.group, size: 16, color: Colors.blue[700]),
+            const SizedBox(width: AppSpacing.xxs),
+            Text(
+              '読み込み中...',
+              style: TextStyle(
+                fontSize: 11,
+                color: Colors.blue[700],
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+      ),
+      error: (error, stack) => Container(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.small,
+          vertical: AppSpacing.xxs,
+        ),
+        decoration: BoxDecoration(
+          color: Colors.blue.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.group, size: 16, color: Colors.blue[700]),
+            const SizedBox(width: AppSpacing.xxs),
+            Text(
+              'グループ',
+              style: TextStyle(
+                fontSize: 11,
+                color: Colors.blue[700],
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

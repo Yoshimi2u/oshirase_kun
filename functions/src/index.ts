@@ -9,77 +9,49 @@ admin.initializeApp();
 setGlobalOptions({maxInstances: 10, region: "asia-northeast1"});
 
 /**
- * 繰り返しタイプの列挙型（Dartと同期）
+ * タスクの型定義（新モデル）
+ */
+interface TaskData {
+  id: string;
+  userId: string;
+  templateId?: string;
+  title: string;
+  description: string;
+  scheduledDate: admin.firestore.Timestamp;
+  completedAt?: admin.firestore.Timestamp;
+  isGroupTask: boolean;
+  groupId?: string;
+  completedByMemberId?: string;
+  groupCompletedAt?: admin.firestore.Timestamp;
+}
+
+/**
+ * スケジュールテンプレートの型定義
+ */
+interface ScheduleTemplateData {
+  id: string;
+  userId: string;
+  title: string;
+  description: string;
+  repeatType: string;
+  repeatInterval?: number;
+  selectedWeekdays?: number[];
+  monthlyDay?: number;
+  requiresCompletion: boolean;
+  isActive: boolean;
+  isGroupSchedule: boolean;
+  groupId?: string;
+}
+
+/**
+ * 繰り返しタイプの列挙型
  */
 enum RepeatType {
   NONE = "none",
   DAILY = "daily",
-  WEEKLY = "weekly",
+  CUSTOM_WEEKLY = "customWeekly",
   MONTHLY = "monthly",
   CUSTOM = "custom",
-}
-
-/**
- * スケジュールの型定義
- */
-interface ScheduleData {
-  id: string;
-  repeatType: RepeatType;
-  repeatInterval?: number;
-  nextScheduledDate: admin.firestore.Timestamp;
-  lastCompletedDate?: admin.firestore.Timestamp;
-  startDate?: admin.firestore.Timestamp;
-  requiresCompletion: boolean;
-  status?: string;
-}
-
-/**
- * 次回予定日を計算（Dartのロジックと同期）
- * @param {ScheduleData} schedule - スケジュールデータ
- * @return {Date | null} 次回予定日
- */
-function calculateNextScheduledDate(schedule: ScheduleData): Date | null {
-  // 基準日: 元のnextScheduledDateを使用（完了不要タスクなので）
-  const baseDate = schedule.nextScheduledDate.toDate();
-
-  switch (schedule.repeatType) {
-  case RepeatType.NONE:
-    return null;
-
-  case RepeatType.DAILY:
-    return new Date(
-      baseDate.getFullYear(),
-      baseDate.getMonth(),
-      baseDate.getDate() + 1
-    );
-
-  case RepeatType.WEEKLY:
-    return new Date(
-      baseDate.getFullYear(),
-      baseDate.getMonth(),
-      baseDate.getDate() + 7
-    );
-
-  case RepeatType.MONTHLY:
-    return new Date(
-      baseDate.getFullYear(),
-      baseDate.getMonth() + 1,
-      baseDate.getDate()
-    );
-
-  case RepeatType.CUSTOM:
-    if (!schedule.repeatInterval || schedule.repeatInterval <= 0) {
-      return null;
-    }
-    return new Date(
-      baseDate.getFullYear(),
-      baseDate.getMonth(),
-      baseDate.getDate() + schedule.repeatInterval
-    );
-
-  default:
-    return null;
-  }
 }
 
 /**
@@ -183,49 +155,47 @@ async function sendNotificationToUser(
       return;
     }
 
-    // 今日のタスクを取得
+    // 今日のタスクを取得（新モデル: tasks コレクション）
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
 
-    // 今日のタスクを取得（範囲クエリのみ使用）
-    const todaySchedulesSnapshot = await db
-      .collection("users")
-      .doc(userId)
-      .collection("schedules")
+    // 今日のタスクを取得（未完了のみ）
+    const todayTasksSnapshot = await db
+      .collection("tasks")
+      .where("userId", "==", userId)
       .where(
-        "nextScheduledDate",
+        "scheduledDate",
         ">=",
         admin.firestore.Timestamp.fromDate(today)
       )
       .where(
-        "nextScheduledDate",
+        "scheduledDate",
         "<",
         admin.firestore.Timestamp.fromDate(tomorrow)
       )
       .get();
 
-    // クライアント側でrequiresCompletionをフィルタリング
-    const todayCount = todaySchedulesSnapshot.docs.filter(
-      (doc) => doc.data().requiresCompletion === true
+    // 未完了タスクのみカウント
+    const todayCount = todayTasksSnapshot.docs.filter(
+      (doc) => !doc.data().completedAt
     ).length;
 
     // 遅延タスクを取得（過去の未完了タスク）
-    const overdueSchedulesSnapshot = await db
-      .collection("users")
-      .doc(userId)
-      .collection("schedules")
+    const overdueTasksSnapshot = await db
+      .collection("tasks")
+      .where("userId", "==", userId)
       .where(
-        "nextScheduledDate",
+        "scheduledDate",
         "<",
         admin.firestore.Timestamp.fromDate(today)
       )
       .get();
 
-    // クライアント側でrequiresCompletionをフィルタリング
-    const overdueCount = overdueSchedulesSnapshot.docs.filter(
-      (doc) => doc.data().requiresCompletion === true
+    // 未完了タスクのみカウント
+    const overdueCount = overdueTasksSnapshot.docs.filter(
+      (doc) => !doc.data().completedAt
     ).length;
 
     // 通知メッセージを作成
@@ -310,17 +280,17 @@ async function sendNotificationToUser(
 }
 
 /**
- * グループタスク完了時の通知
+ * グループタスク完了時の通知（新モデル対応）
  * グループメンバーがタスクを完了した時、他のメンバーに通知
  */
 export const notifyGroupTaskCompletion = onDocumentUpdated(
   {
-    document: "users/{userId}/schedules/{scheduleId}",
+    document: "tasks/{taskId}",
     region: "asia-northeast1",
   },
   async (event) => {
-    const beforeData = event.data?.before.data();
-    const afterData = event.data?.after.data();
+    const beforeData = event.data?.before.data() as TaskData | undefined;
+    const afterData = event.data?.after.data() as TaskData | undefined;
 
     // データが存在しない場合は処理しない
     if (!beforeData || !afterData) {
@@ -328,7 +298,7 @@ export const notifyGroupTaskCompletion = onDocumentUpdated(
     }
 
     // グループタスクでない場合は処理しない
-    if (!afterData.isGroupSchedule || !afterData.groupId) {
+    if (!afterData.isGroupTask || !afterData.groupId) {
       return;
     }
 
@@ -346,14 +316,8 @@ export const notifyGroupTaskCompletion = onDocumentUpdated(
       return;
     }
 
-    // このトリガーが完了者本人のドキュメント更新でない場合はスキップ
-    // （バッチ更新で全メンバーのドキュメントが更新されるが、通知は1回だけ）
-    if (event.params.userId !== completedByMemberId) {
-      return;
-    }
-
     const groupId = afterData.groupId;
-    const scheduleTitle = afterData.title || "タスク";
+    const taskTitle = afterData.title || "タスク";
 
     try {
       const db = admin.firestore();
@@ -385,7 +349,7 @@ export const notifyGroupTaskCompletion = onDocumentUpdated(
 
       logger.info(
         // eslint-disable-next-line max-len
-        `グループタスク完了通知: ${groupName} - ${scheduleTitle} by ${completedByUserName}`
+        `グループタスク完了通知: ${groupName} - ${taskTitle} by ${completedByUserName}`
       );
 
       // 各メンバーに通知を送信
@@ -406,15 +370,15 @@ export const notifyGroupTaskCompletion = onDocumentUpdated(
               token: fcmToken,
               notification: {
                 title: `${groupName} - タスク完了`,
-                body: `${completedByUserName}さんが「${scheduleTitle}」を完了しました`,
+                body: `${completedByUserName}さんが「${taskTitle}」を完了しました`,
               },
               data: {
                 type: "group_task_completion",
                 groupId: groupId,
-                scheduleId: event.params.scheduleId,
+                taskId: event.params.taskId,
                 completedByMemberId: completedByMemberId,
                 completedByUserName: completedByUserName,
-                scheduleTitle: scheduleTitle,
+                taskTitle: taskTitle,
               },
               android: {
                 priority: "high",
@@ -433,7 +397,7 @@ export const notifyGroupTaskCompletion = onDocumentUpdated(
             });
 
             logger.info(
-              `[${memberId}] グループタスク完了通知送信成功: ${scheduleTitle}`
+              `[${memberId}] グループタスク完了通知送信成功: ${taskTitle}`
             );
           } catch (error) {
             const errorCode = (error as {code?: string}).code;
@@ -483,96 +447,237 @@ export const notifyGroupTaskCompletion = onDocumentUpdated(
 );
 
 /**
- * 完了不要の繰り返しタスクの予定日を自動更新
- * 毎日0時（日本時間）に実行
+ * 月次タスク自動生成
+ * 毎月1日0時（日本時間）に翌月分のタスクを生成
  */
-export const updateNonRequiredSchedules = onSchedule(
+export const generateMonthlyTasks = onSchedule(
   {
-    schedule: "0 0 * * *", // 毎日0時（JST）
+    schedule: "0 0 1 * *", // 毎月1日0時（JST）
     timeZone: "Asia/Tokyo",
   },
   async () => {
-    logger.info("[完了不要タスク更新] 処理開始");
+    logger.info("[月次タスク生成] 処理開始");
 
     const db = admin.firestore();
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
 
     try {
-      // 完了不要 & 予定日が過去 & 繰り返しあり
-      const schedulesSnapshot = await db
-        .collectionGroup("schedules")
-        .where("requiresCompletion", "==", false)
-        .where(
-          "nextScheduledDate",
-          "<",
-          admin.firestore.Timestamp.fromDate(today)
-        )
+      // アクティブなテンプレートを全て取得
+      const templatesSnapshot = await db
+        .collection("schedule_templates")
+        .where("isActive", "==", true)
         .get();
 
-      logger.info(`[完了不要タスク更新] 対象: ${schedulesSnapshot.size}件`);
+      logger.info(`[月次タスク生成] 対象テンプレート: ${templatesSnapshot.size}件`);
 
-      if (schedulesSnapshot.empty) {
-        logger.info("[完了不要タスク更新] 更新対象なし");
+      if (templatesSnapshot.empty) {
+        logger.info("[月次タスク生成] 対象テンプレートなし");
         return;
       }
 
-      // バッチ処理（500件ごと）
-      const batches: admin.firestore.WriteBatch[] = [];
-      let currentBatch = db.batch();
-      let operationCount = 0;
-      let updatedCount = 0;
+      let totalTasksCreated = 0;
 
-      for (const doc of schedulesSnapshot.docs) {
-        const data = doc.data() as ScheduleData;
+      // 各テンプレートに対してタスクを生成
+      for (const templateDoc of templatesSnapshot.docs) {
+        const template = templateDoc.data() as ScheduleTemplateData;
 
-        // 完了済みは除外
-        if (data.status === "completed") {
+        // カスタム（完了必須あり）は除外（完了時に生成される）
+        if (
+          template.repeatType === RepeatType.CUSTOM &&
+          template.requiresCompletion
+        ) {
           continue;
         }
 
-        // 繰り返しがない場合は除外
-        if (data.repeatType === RepeatType.NONE) {
+        // 繰り返しなしは除外
+        if (template.repeatType === RepeatType.NONE) {
           continue;
         }
 
-        // 次回予定日を計算
-        const nextDate = calculateNextScheduledDate(data);
+        // 翌月分のタスク日付リストを生成
+        const taskDates = generateTaskDatesForNextMonth(template);
 
-        if (!nextDate) {
-          logger.warn(`[${doc.id}] 次回予定日の計算失敗`);
-          continue;
-        }
+        // 各日付に対してタスクを作成（重複チェック付き）
+        for (const taskDate of taskDates) {
+          // 既にタスクが存在するかチェック
+          const existingTaskSnapshot = await db
+            .collection("tasks")
+            .where("userId", "==", template.userId)
+            .where("templateId", "==", templateDoc.id)
+            .where(
+              "scheduledDate",
+              "==",
+              admin.firestore.Timestamp.fromDate(taskDate)
+            )
+            .limit(1)
+            .get();
 
-        // バッチに追加
-        currentBatch.update(doc.ref, {
-          nextScheduledDate: admin.firestore.Timestamp.fromDate(nextDate),
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        });
+          if (!existingTaskSnapshot.empty) {
+            // 既に存在する場合はスキップ
+            continue;
+          }
 
-        operationCount++;
-        updatedCount++;
+          // タスクを作成
+          await db.collection("tasks").add({
+            userId: template.userId,
+            templateId: templateDoc.id,
+            title: template.title,
+            description: template.description,
+            scheduledDate: admin.firestore.Timestamp.fromDate(taskDate),
+            completedAt: null,
+            completedByMemberId: null,
+            groupId: template.groupId || null,
+            isGroupSchedule: template.isGroupSchedule,
+            repeatType: template.repeatType,
+            weekdays: template.selectedWeekdays || null,
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
 
-        // 500件ごとにバッチをコミット
-        if (operationCount >= 500) {
-          batches.push(currentBatch);
-          currentBatch = db.batch();
-          operationCount = 0;
+          totalTasksCreated++;
         }
       }
 
-      // 残りのバッチを追加
-      if (operationCount > 0) {
-        batches.push(currentBatch);
-      }
-
-      // 全バッチをコミット
-      await Promise.all(batches.map((batch) => batch.commit()));
-
-      logger.info(`[完了不要タスク更新] 完了: ${updatedCount}件更新`);
+      logger.info(`[月次タスク生成] 完了: ${totalTasksCreated}件のタスクを生成`);
     } catch (error) {
-      logger.error("[完了不要タスク更新] エラー:", error);
+      logger.error("[月次タスク生成] エラー:", error);
       throw error;
     }
   }
 );
+
+/**
+ * 翌月分のタスク日付リストを生成
+ * @param {ScheduleTemplateData} template - テンプレートデータ
+ * @return {Date[]} タスク日付リスト
+ */
+function generateTaskDatesForNextMonth(
+  template: ScheduleTemplateData
+): Date[] {
+  const today = new Date();
+  const dates: Date[] = [];
+
+  // 翌月の1日と末日を計算
+  const nextMonth = today.getMonth() === 11 ? 0 : today.getMonth() + 1;
+  const nextMonthYear =
+    today.getMonth() === 11 ? today.getFullYear() + 1 : today.getFullYear();
+  const startOfNextMonth = new Date(nextMonthYear, nextMonth, 1);
+  const endOfNextMonth = new Date(nextMonthYear, nextMonth + 1, 0);
+
+  // 初回日付を計算（翌月1日を基準）
+  let currentDate = calculateNextTaskDate(template, startOfNextMonth);
+
+  // 翌月末まで生成
+  while (currentDate <= endOfNextMonth) {
+    // 翌月内の日付のみ追加
+    if (currentDate >= startOfNextMonth) {
+      dates.push(new Date(currentDate));
+    }
+
+    // 次の日付を計算
+    const prevDate = new Date(currentDate);
+    prevDate.setDate(prevDate.getDate() - 1);
+    currentDate = calculateNextTaskDate(template, prevDate);
+
+    // 無限ループ防止
+    if (dates.length > 100) {
+      break;
+    }
+  }
+
+  return dates;
+}
+
+/**
+ * 次回のタスク予定日を計算
+ * @param {ScheduleTemplateData} template - テンプレートデータ
+ * @param {Date} baseDate - 基準日
+ * @return {Date} 次回のタスク予定日
+ */
+function calculateNextTaskDate(
+  template: ScheduleTemplateData,
+  baseDate: Date
+): Date {
+  switch (template.repeatType) {
+  case RepeatType.DAILY:
+    return new Date(
+      baseDate.getFullYear(),
+      baseDate.getMonth(),
+      baseDate.getDate() + 1
+    );
+
+  case RepeatType.CUSTOM_WEEKLY: {
+    // 曜日指定
+    if (!template.selectedWeekdays || template.selectedWeekdays.length === 0) {
+      return new Date(
+        baseDate.getFullYear(),
+        baseDate.getMonth(),
+        baseDate.getDate() + 1
+      );
+    }
+    return findNextWeekday(baseDate, template.selectedWeekdays);
+  }
+
+  case RepeatType.MONTHLY: {
+    // monthlyDayが指定されている場合はその日を使用
+    const targetDay = template.monthlyDay ?? baseDate.getDate();
+    const day = targetDay > 28 ? 28 : targetDay;
+
+    let nextMonth = baseDate.getMonth() + 1;
+    let nextYear = baseDate.getFullYear();
+    if (nextMonth > 11) {
+      nextMonth = 0;
+      nextYear++;
+    }
+
+    return new Date(nextYear, nextMonth, day);
+  }
+
+  case RepeatType.CUSTOM: {
+    if (!template.repeatInterval || template.repeatInterval <= 0) {
+      return new Date(
+        baseDate.getFullYear(),
+        baseDate.getMonth(),
+        baseDate.getDate() + 1
+      );
+    }
+    return new Date(
+      baseDate.getFullYear(),
+      baseDate.getMonth(),
+      baseDate.getDate() + template.repeatInterval
+    );
+  }
+
+  default:
+    return new Date(
+      baseDate.getFullYear(),
+      baseDate.getMonth(),
+      baseDate.getDate() + 1
+    );
+  }
+}
+
+/**
+ * 指定された曜日リストから次回の日付を検索
+ * @param {Date} baseDate - 基準日
+ * @param {number[]} weekdays - 曜日リスト（1=月曜, 7=日曜）
+ * @return {Date} 次回の日付
+ */
+function findNextWeekday(baseDate: Date, weekdays: number[]): Date {
+  const nextDate = new Date(baseDate);
+  nextDate.setDate(nextDate.getDate() + 1);
+
+  // 最大14日先まで検索（2週間分）
+  for (let i = 0; i < 14; i++) {
+    // JavaScriptのweekdayは0=日曜, Dartは1=月曜なので変換
+    const jsWeekday = nextDate.getDay() === 0 ? 7 : nextDate.getDay();
+    if (weekdays.includes(jsWeekday)) {
+      return nextDate;
+    }
+    nextDate.setDate(nextDate.getDate() + 1);
+  }
+
+  // 見つからない場合は翌日を返す（フォールバック）
+  const fallback = new Date(baseDate);
+  fallback.setDate(fallback.getDate() + 1);
+  return fallback;
+}

@@ -227,12 +227,18 @@ class ScheduleRepository {
 
     // 次回予定日を計算
     DateTime? nextDate;
-    if (schedule.requiresCompletion) {
-      // 完了必須の場合、完了してから次の予定を計算
-      nextDate = schedule.calculateNextScheduledDate();
+    if (schedule.repeatType == RepeatType.custom) {
+      // カスタム（何日ごと）の場合
+      if (schedule.requiresCompletion) {
+        // 完了必須：完了日から次の予定を計算
+        nextDate = schedule.calculateNextScheduledDate();
+      } else {
+        // 完了不要：元のnextScheduledDateを維持（Cloud Functionsが自動更新）
+        nextDate = schedule.nextScheduledDate;
+      }
     } else {
-      // 完了不要の場合、元の予定日から次の予定を計算
-      nextDate = schedule.calculateNextScheduledDate();
+      // その他の繰り返しは元のnextScheduledDateを維持（Cloud Functionsが自動更新）
+      nextDate = schedule.nextScheduledDate;
     }
 
     // スケジュールの lastCompletedDate と nextScheduledDate のみ更新

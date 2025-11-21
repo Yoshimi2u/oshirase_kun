@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/group.dart';
+import '../models/group_with_roles.dart';
+import '../models/group_role.dart';
 import '../services/invite_code_service.dart';
 
 /// グループのCRUD操作を管理するリポジトリクラス
@@ -34,6 +36,12 @@ class GroupRepository {
       );
 
       final data = group.toFirestore();
+
+      // 権限システム用のmemberRolesを追加
+      data['memberRoles'] = {
+        ownerId: GroupRole.owner.toFirestore(),
+      };
+
       await docRef.set(data);
 
       return group;
@@ -113,8 +121,10 @@ class GroupRepository {
   /// グループにメンバーを追加
   Future<void> addMember(String groupId, String userId) async {
     try {
+      // memberRolesも更新（デフォルトはmember）
       await _groupsCollection.doc(groupId).update({
         'memberIds': FieldValue.arrayUnion([userId]),
+        'memberRoles.$userId': GroupRole.member.toFirestore(),
         'updatedAt': Timestamp.now(),
       });
     } catch (e) {
@@ -161,10 +171,24 @@ class GroupRepository {
   /// グループを削除（論理削除）
   Future<void> deleteGroup(String groupId) async {
     try {
-      await _groupsCollection.doc(groupId).update({
+      // グループに関連する全てのタスクを削除
+      final tasksSnapshot =
+          await FirebaseFirestore.instance.collection('tasks').where('groupId', isEqualTo: groupId).get();
+
+      // バッチ処理でタスクを削除
+      final batch = FirebaseFirestore.instance.batch();
+
+      for (final doc in tasksSnapshot.docs) {
+        batch.delete(doc.reference);
+      }
+
+      // グループを非アクティブ化
+      batch.update(_groupsCollection.doc(groupId), {
         'isActive': false,
         'updatedAt': Timestamp.now(),
       });
+
+      await batch.commit();
     } catch (e) {
       throw Exception('グループの削除に失敗しました: $e');
     }
@@ -224,6 +248,98 @@ class GroupRepository {
         rethrow;
       }
       throw Exception('グループへの参加に失敗しました: $e');
+    }
+  }
+
+  /// グループIDでGroupWithRolesを取得
+  Future<GroupWithRoles?> getGroupWithRoles(String groupId) async {
+    try {
+      final doc = await _groupsCollection.doc(groupId).get();
+
+      if (!doc.exists) {
+        return null;
+      }
+
+      return GroupWithRoles.fromFirestore(doc);
+    } catch (e) {
+      throw Exception('グループの取得に失敗しました: $e');
+    }
+  }
+
+  /// メンバーの役割を更新
+  Future<void> updateMemberRole({
+    required String groupId,
+    required String requestUserId,
+    required String targetUserId,
+    required GroupRole newRole,
+  }) async {
+    try {
+      final group = await getGroupWithRoles(groupId);
+
+      if (group == null) {
+        throw Exception('グループが見つかりません');
+      }
+
+      // 権限チェック（オーナーのみ）
+      if (!group.canChangeRole(requestUserId)) {
+        throw Exception('メンバーの役割を変更する権限がありません');
+      }
+
+      // オーナーの役割は変更できない
+      if (targetUserId == group.ownerId) {
+        throw Exception('オーナーの役割は変更できません');
+      }
+
+      // 役割更新
+      final updatedRoles = Map<String, GroupRole>.from(group.memberRoles);
+      updatedRoles[targetUserId] = newRole;
+
+      await _groupsCollection.doc(groupId).update({
+        'memberRoles': updatedRoles.map((k, v) => MapEntry(k, v.toFirestore())),
+        'updatedAt': Timestamp.now(),
+      });
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  /// メンバーを削除（権限チェック付き）
+  Future<void> removeMemberWithPermission({
+    required String groupId,
+    required String requestUserId,
+    required String targetUserId,
+  }) async {
+    try {
+      final group = await getGroupWithRoles(groupId);
+
+      if (group == null) {
+        throw Exception('グループが見つかりません');
+      }
+
+      // 詳細な権限チェック
+      if (!group.canRemoveSpecificMember(requestUserId, targetUserId)) {
+        final targetRole = group.getRoleForUser(targetUserId);
+
+        if (targetUserId == group.ownerId) {
+          throw Exception('オーナーは削除できません');
+        } else if (targetRole == GroupRole.admin) {
+          throw Exception('管理者は他の管理者を削除できません');
+        } else {
+          throw Exception('このメンバーを削除する権限がありません');
+        }
+      }
+
+      // メンバー削除
+      final updatedRoles = Map<String, GroupRole>.from(group.memberRoles);
+      updatedRoles.remove(targetUserId);
+
+      await _groupsCollection.doc(groupId).update({
+        'memberRoles': updatedRoles.map((k, v) => MapEntry(k, v.toFirestore())),
+        'memberIds': updatedRoles.keys.toList(),
+        'updatedAt': Timestamp.now(),
+      });
+    } catch (e) {
+      rethrow;
     }
   }
 }
