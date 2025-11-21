@@ -221,6 +221,10 @@ class _ScheduleFormScreenState extends ConsumerState<ScheduleFormScreen> {
       // グローバルローディング非表示（成功）
       await LoadingService.hide(withSuccess: true);
 
+      // 予定一覧とカレンダーの両方を更新
+      ref.invalidate(upcomingTasksProvider);
+      ref.invalidate(tasksByDateRangeProvider);
+
       if (mounted) {
         context.pop();
       }
@@ -319,6 +323,10 @@ class _ScheduleFormScreenState extends ConsumerState<ScheduleFormScreen> {
 
         await LoadingService.hide(withSuccess: true);
 
+        // 予定一覧とカレンダーの両方を更新
+        ref.invalidate(upcomingTasksProvider);
+        ref.invalidate(tasksByDateRangeProvider);
+
         if (mounted) {
           ToastUtils.showSuccess(AppMessages.deleteTaskSuccess);
           context.pop();
@@ -379,6 +387,10 @@ class _ScheduleFormScreenState extends ConsumerState<ScheduleFormScreen> {
 
         await LoadingService.hide(withSuccess: true);
 
+        // 予定一覧とカレンダーの両方を更新
+        ref.invalidate(upcomingTasksProvider);
+        ref.invalidate(tasksByDateRangeProvider);
+
         if (mounted) {
           ToastUtils.showSuccess(AppMessages.deleteFutureTasksSuccess);
           context.pop();
@@ -436,6 +448,10 @@ class _ScheduleFormScreenState extends ConsumerState<ScheduleFormScreen> {
         // グローバルローディング非表示（成功）
         await LoadingService.hide(withSuccess: true);
 
+        // 予定一覧とカレンダーの両方を更新
+        ref.invalidate(upcomingTasksProvider);
+        ref.invalidate(tasksByDateRangeProvider);
+
         if (mounted) {
           ToastUtils.showSuccess(AppMessages.deleteSuccess);
           context.pop();
@@ -472,380 +488,444 @@ class _ScheduleFormScreenState extends ConsumerState<ScheduleFormScreen> {
             ),
         ],
       ),
-      body: Form(
-        key: _formKey,
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            // タイトル入力
-            TextFormField(
-              controller: _titleController,
-              decoration: const InputDecoration(
-                labelText: 'タイトル',
-                hintText: '例: 薬を飲む',
-                border: OutlineInputBorder(),
+      body: GestureDetector(
+        onTap: () {
+          // 画面タップでキーボードを閉じる
+          FocusScope.of(context).unfocus();
+        },
+        child: Form(
+          key: _formKey,
+          child: ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              // タイトル入力
+              TextFormField(
+                controller: _titleController,
+                decoration: const InputDecoration(
+                  labelText: 'タイトル',
+                  hintText: '例: 薬を飲む',
+                  border: OutlineInputBorder(),
+                  counterText: '', // 文字数カウンターを非表示
+                ),
+                maxLength: 50,
+                textInputAction: TextInputAction.done,
+                onFieldSubmitted: (_) {
+                  FocusScope.of(context).unfocus();
+                },
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'タイトルを入力してください';
+                  }
+                  if (value.length > 50) {
+                    return 'タイトルは50文字以内で入力してください';
+                  }
+                  return null;
+                },
               ),
-              validator: (value) {
-                if (value == null || value.isEmpty) {
-                  return 'タイトルを入力してください';
-                }
-                return null;
-              },
-            ),
-            const SizedBox(height: 16),
+              const SizedBox(height: 16),
 
-            // 説明入力
-            TextFormField(
-              controller: _descriptionController,
-              decoration: const InputDecoration(
-                labelText: '説明（任意）',
-                hintText: '詳細な説明を入力',
-                border: OutlineInputBorder(),
+              // 説明入力
+              TextFormField(
+                controller: _descriptionController,
+                decoration: const InputDecoration(
+                  labelText: '説明（任意）',
+                  hintText: '詳細な説明を入力',
+                  border: OutlineInputBorder(),
+                  counterText: '', // 文字数カウンターを非表示
+                ),
+                maxLength: 500,
+                maxLines: 3,
+                textInputAction: TextInputAction.done,
+                onFieldSubmitted: (_) {
+                  FocusScope.of(context).unfocus();
+                },
+                validator: (value) {
+                  if (value != null && value.length > 500) {
+                    return '説明は500文字以内で入力してください';
+                  }
+                  return null;
+                },
               ),
-              maxLines: 2,
-            ),
-            const SizedBox(height: 16),
+              const SizedBox(height: 16),
 
-            // グループ予定設定
-            Card(
-              child: Column(
-                children: [
-                  SwitchListTile(
-                    value: _isGroupSchedule,
-                    onChanged: (value) {
-                      setState(() {
-                        _isGroupSchedule = value;
-                        if (!value) {
-                          _selectedGroupId = null;
-                        }
-                      });
-                    },
-                    title: const Text('グループ予定'),
-                    subtitle: Text(
-                      _isGroupSchedule ? '全員の予定として作成されます' : '個人の予定として作成されます',
-                    ),
-                    secondary: Icon(
-                      _isGroupSchedule ? Icons.group : Icons.person,
-                      color: _isGroupSchedule ? Colors.blue : Colors.grey,
-                    ),
-                  ),
-                  if (_isGroupSchedule) ...[
-                    const Divider(height: 1),
-                    Consumer(
-                      builder: (context, ref, child) {
-                        final groupsAsync = ref.watch(userGroupsStreamProvider);
-
-                        return groupsAsync.when(
-                          loading: () => const Padding(
-                            padding: EdgeInsets.all(16.0),
-                            child: Center(child: CircularProgressIndicator()),
-                          ),
-                          error: (error, stack) => const Padding(
-                            padding: EdgeInsets.all(16.0),
-                            child: Column(
-                              children: [
-                                Icon(Icons.error_outline, color: Colors.red, size: 32),
-                                SizedBox(height: 8),
-                                Text(
-                                  'グループの読み込みに失敗しました',
-                                  style: TextStyle(color: Colors.grey),
-                                ),
-                              ],
-                            ),
-                          ),
-                          data: (groups) {
-                            if (groups.isEmpty) {
-                              return Padding(
-                                padding: const EdgeInsets.all(16.0),
-                                child: Column(
-                                  children: [
-                                    const Text(
-                                      'グループがありません',
-                                      style: TextStyle(color: Colors.grey),
-                                    ),
-                                    const SizedBox(height: 8),
-                                    ElevatedButton.icon(
-                                      onPressed: () {
-                                        context.push('/groups');
-                                      },
-                                      icon: const Icon(Icons.add),
-                                      label: const Text('グループを作成'),
-                                    ),
-                                  ],
-                                ),
-                              );
-                            }
-
-                            return Padding(
-                              padding: const EdgeInsets.all(16.0),
-                              child: DropdownButtonFormField<String>(
-                                value: _selectedGroupId,
-                                decoration: const InputDecoration(
-                                  labelText: 'グループを選択',
-                                  border: OutlineInputBorder(),
-                                  prefixIcon: Icon(Icons.group),
-                                ),
-                                items: groups.map((group) {
-                                  return DropdownMenuItem(
-                                    value: group.id,
-                                    child: Text(group.name),
-                                  );
-                                }).toList(),
-                                onChanged: (value) {
-                                  setState(() {
-                                    _selectedGroupId = value;
-                                  });
-                                },
-                                validator: (value) {
-                                  if (_isGroupSchedule && (value == null || value.isEmpty)) {
-                                    return 'グループを選択してください';
-                                  }
-                                  return null;
-                                },
-                              ),
-                            );
-                          },
-                        );
+              // グループ予定設定
+              Card(
+                child: Column(
+                  children: [
+                    SwitchListTile(
+                      value: _isGroupSchedule,
+                      onChanged: (value) {
+                        setState(() {
+                          _isGroupSchedule = value;
+                          if (!value) {
+                            _selectedGroupId = null;
+                          }
+                        });
                       },
-                    ),
-                  ],
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-
-            // 繰り返し設定
-            Card(
-              child: Column(
-                children: [
-                  const ListTile(
-                    leading: Icon(Icons.repeat),
-                    title: Text('繰り返し設定'),
-                  ),
-                  const Divider(height: 1),
-                  RadioListTile<RepeatType>(
-                    title: const Text('繰り返しなし'),
-                    value: RepeatType.none,
-                    groupValue: _repeatType,
-                    onChanged: (value) {
-                      setState(() {
-                        _repeatType = value!;
-                      });
-                    },
-                  ),
-                  RadioListTile<RepeatType>(
-                    title: const Text('毎日'),
-                    value: RepeatType.daily,
-                    groupValue: _repeatType,
-                    onChanged: (value) {
-                      setState(() {
-                        _repeatType = value!;
-                      });
-                    },
-                  ),
-                  // 曜日指定
-                  RadioListTile<RepeatType>(
-                    title: const Text('毎週'),
-                    value: RepeatType.customWeekly,
-                    groupValue: _repeatType,
-                    onChanged: (value) {
-                      setState(() {
-                        _repeatType = value!;
-                        if (_selectedWeekdays.isEmpty) {
-                          // 初期値として火曜日を設定
-                          _selectedWeekdays = [2];
-                        }
-                      });
-                    },
-                  ),
-                  if (_repeatType == RepeatType.customWeekly)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Padding(
-                            padding: EdgeInsets.only(left: 16, bottom: 8),
-                            child: Text(
-                              '曜日を選択',
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: Colors.grey,
-                              ),
-                            ),
-                          ),
-                          Wrap(
-                            spacing: 8,
-                            children: [
-                              for (int i = 1; i <= 7; i++)
-                                FilterChip(
-                                  label: Text(['月', '火', '水', '木', '金', '土', '日'][i - 1]),
-                                  selected: _selectedWeekdays.contains(i),
-                                  showCheckmark: false,
-                                  onSelected: (selected) {
-                                    setState(() {
-                                      if (selected) {
-                                        _selectedWeekdays.add(i);
-                                        _selectedWeekdays.sort();
-                                      } else {
-                                        _selectedWeekdays.remove(i);
-                                      }
-                                    });
-                                  },
-                                ),
-                            ],
-                          ),
-                        ],
+                      title: const Text('グループ予定'),
+                      subtitle: Text(
+                        _isGroupSchedule ? '全員の予定として作成されます' : '個人の予定として作成されます',
+                      ),
+                      secondary: Icon(
+                        _isGroupSchedule ? Icons.group : Icons.person,
+                        color: _isGroupSchedule ? Colors.blue : Colors.grey,
                       ),
                     ),
-                  RadioListTile<RepeatType>(
-                    title: Row(
-                      children: [
-                        const Text('毎月 '),
-                        SizedBox(
-                          width: 60,
-                          child: TextFormField(
-                            initialValue: _monthlyDay.toString(),
-                            keyboardType: TextInputType.number,
-                            decoration: const InputDecoration(
-                              isDense: true,
-                              contentPadding: EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 8,
-                              ),
-                            ),
-                            onChanged: (value) {
-                              final day = int.tryParse(value) ?? 1;
-                              setState(() {
-                                // 1〜28の範囲に制限
-                                _monthlyDay = day.clamp(1, 28);
-                              });
-                            },
-                          ),
-                        ),
-                        const Text(' 日（最大28日）'),
-                      ],
-                    ),
-                    value: RepeatType.monthly,
-                    groupValue: _repeatType,
-                    onChanged: (value) {
-                      setState(() {
-                        _repeatType = value!;
-                      });
-                    },
-                  ),
-                  RadioListTile<RepeatType>(
-                    title: Row(
-                      children: [
-                        SizedBox(
-                          width: 60,
-                          child: TextFormField(
-                            initialValue: _customDays.toString(),
-                            keyboardType: TextInputType.number,
-                            decoration: const InputDecoration(
-                              isDense: true,
-                              contentPadding: EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 8,
-                              ),
-                            ),
-                            onChanged: (value) {
-                              final days = int.tryParse(value);
-                              if (days != null && days > 0) {
-                                setState(() {
-                                  _customDays = days;
-                                });
-                              }
-                            },
-                          ),
-                        ),
-                        const Text(' 日ごと'),
-                      ],
-                    ),
-                    value: RepeatType.custom,
-                    groupValue: _repeatType,
-                    onChanged: (value) {
-                      setState(() {
-                        _repeatType = value!;
-                      });
-                    },
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
+                    if (_isGroupSchedule) ...[
+                      const Divider(height: 1),
+                      Consumer(
+                        builder: (context, ref, child) {
+                          final groupsAsync = ref.watch(userGroupsStreamProvider);
 
-            // 完了必須フラグ（カスタム（何日ごと）の場合のみ表示）
-            if (_repeatType == RepeatType.custom)
-              Card(
-                child: SwitchListTile(
-                  secondary: const Icon(Icons.flag),
-                  title: const Text('完了必須'),
-                  subtitle: const Text(
-                    '有効：完了後に次の予定を作成\n無効：指定日数ごとに自動作成',
-                    style: TextStyle(fontSize: 12),
-                  ),
-                  value: _requiresCompletion,
-                  onChanged: (value) {
-                    setState(() {
-                      _requiresCompletion = value;
-                    });
-                  },
+                          return groupsAsync.when(
+                            loading: () => const Padding(
+                              padding: EdgeInsets.all(16.0),
+                              child: Center(child: CircularProgressIndicator()),
+                            ),
+                            error: (error, stack) => const Padding(
+                              padding: EdgeInsets.all(16.0),
+                              child: Column(
+                                children: [
+                                  Icon(Icons.error_outline, color: Colors.red, size: 32),
+                                  SizedBox(height: 8),
+                                  Text(
+                                    'グループの読み込みに失敗しました',
+                                    style: TextStyle(color: Colors.grey),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            data: (groups) {
+                              if (groups.isEmpty) {
+                                return Padding(
+                                  padding: const EdgeInsets.all(16.0),
+                                  child: Column(
+                                    children: [
+                                      const Text(
+                                        'グループがありません',
+                                        style: TextStyle(color: Colors.grey),
+                                      ),
+                                      const SizedBox(height: 8),
+                                      ElevatedButton.icon(
+                                        onPressed: () {
+                                          context.push('/groups');
+                                        },
+                                        icon: const Icon(Icons.add),
+                                        label: const Text('グループを作成'),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              }
+
+                              return Padding(
+                                padding: const EdgeInsets.all(16.0),
+                                child: DropdownButtonFormField<String>(
+                                  value: _selectedGroupId,
+                                  decoration: const InputDecoration(
+                                    labelText: 'グループを選択',
+                                    border: OutlineInputBorder(),
+                                    prefixIcon: Icon(Icons.group),
+                                  ),
+                                  items: groups.map((group) {
+                                    return DropdownMenuItem(
+                                      value: group.id,
+                                      child: Text(group.name),
+                                    );
+                                  }).toList(),
+                                  onChanged: (value) {
+                                    setState(() {
+                                      _selectedGroupId = value;
+                                    });
+                                  },
+                                  validator: (value) {
+                                    if (_isGroupSchedule && (value == null || value.isEmpty)) {
+                                      return 'グループを選択してください';
+                                    }
+                                    return null;
+                                  },
+                                ),
+                              );
+                            },
+                          );
+                        },
+                      ),
+                    ],
+                  ],
                 ),
               ),
-            if (_repeatType == RepeatType.custom) const SizedBox(height: 16),
+              const SizedBox(height: 16),
 
-            // 開始日選択（繰り返しなしとカスタムの場合のみ表示）
-            if (_repeatType == RepeatType.none || _repeatType == RepeatType.custom)
+              // 繰り返し設定
               Card(
-                child: ListTile(
-                  leading: const Icon(Icons.event),
-                  title: const Text('開始日'),
-                  subtitle: Text(
-                    '${_startDate.year}年${_startDate.month}月${_startDate.day}日',
+                child: Column(
+                  children: [
+                    const ListTile(
+                      leading: Icon(Icons.repeat),
+                      title: Text('繰り返し設定'),
+                    ),
+                    const Divider(height: 1),
+                    ListTile(
+                      leading: Radio<RepeatType>(
+                        value: RepeatType.none,
+                        groupValue: _repeatType,
+                        onChanged: (value) {
+                          setState(() {
+                            _repeatType = value!;
+                          });
+                        },
+                      ),
+                      title: const Text('繰り返しなし'),
+                      onTap: null, // タップ無効化
+                    ),
+                    ListTile(
+                      leading: Radio<RepeatType>(
+                        value: RepeatType.daily,
+                        groupValue: _repeatType,
+                        onChanged: (value) {
+                          setState(() {
+                            _repeatType = value!;
+                          });
+                        },
+                      ),
+                      title: const Text('毎日'),
+                      onTap: null, // タップ無効化
+                    ),
+                    // 曜日指定
+                    ListTile(
+                      leading: Radio<RepeatType>(
+                        value: RepeatType.customWeekly,
+                        groupValue: _repeatType,
+                        onChanged: (value) {
+                          setState(() {
+                            _repeatType = value!;
+                            if (_selectedWeekdays.isEmpty) {
+                              // 初期値として火曜日を設定
+                              _selectedWeekdays = [2];
+                            }
+                          });
+                        },
+                      ),
+                      title: const Text('毎週'),
+                      onTap: null, // タップ無効化
+                    ),
+                    if (_repeatType == RepeatType.customWeekly)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Padding(
+                              padding: EdgeInsets.only(left: 16, bottom: 8),
+                              child: Text(
+                                '曜日を選択',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color: Colors.grey,
+                                ),
+                              ),
+                            ),
+                            Wrap(
+                              spacing: 8,
+                              children: [
+                                for (int i = 1; i <= 7; i++)
+                                  FilterChip(
+                                    label: Text(['月', '火', '水', '木', '金', '土', '日'][i - 1]),
+                                    selected: _selectedWeekdays.contains(i),
+                                    showCheckmark: false,
+                                    onSelected: (selected) {
+                                      setState(() {
+                                        if (selected) {
+                                          _selectedWeekdays.add(i);
+                                          _selectedWeekdays.sort();
+                                        } else {
+                                          _selectedWeekdays.remove(i);
+                                        }
+                                      });
+                                    },
+                                  ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ListTile(
+                      leading: Radio<RepeatType>(
+                        value: RepeatType.monthly,
+                        groupValue: _repeatType,
+                        onChanged: (value) {
+                          setState(() {
+                            _repeatType = value!;
+                          });
+                        },
+                      ),
+                      title: Row(
+                        children: [
+                          const Text('毎月 '),
+                          SizedBox(
+                            width: 60,
+                            child: TextFormField(
+                              initialValue: _monthlyDay.toString(),
+                              keyboardType: TextInputType.number,
+                              textInputAction: TextInputAction.done,
+                              decoration: const InputDecoration(
+                                isDense: true,
+                                contentPadding: EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 8,
+                                ),
+                              ),
+                              onChanged: (value) {
+                                final day = int.tryParse(value) ?? 1;
+                                setState(() {
+                                  // 1〜28の範囲に制限
+                                  _monthlyDay = day.clamp(1, 28);
+                                });
+                              },
+                              onFieldSubmitted: (_) {
+                                FocusScope.of(context).unfocus();
+                              },
+                            ),
+                          ),
+                          const Text(' 日（最大28日）'),
+                        ],
+                      ),
+                      onTap: null, // タップ無効化
+                    ),
+                    ListTile(
+                      leading: Radio<RepeatType>(
+                        value: RepeatType.monthlyLastDay,
+                        groupValue: _repeatType,
+                        onChanged: (value) {
+                          setState(() {
+                            _repeatType = value!;
+                          });
+                        },
+                      ),
+                      title: const Text('毎月末日'),
+                      onTap: null, // タップ無効化
+                    ),
+                    ListTile(
+                      leading: Radio<RepeatType>(
+                        value: RepeatType.custom,
+                        groupValue: _repeatType,
+                        onChanged: (value) {
+                          setState(() {
+                            _repeatType = value!;
+                          });
+                        },
+                      ),
+                      title: Row(
+                        children: [
+                          SizedBox(
+                            width: 60,
+                            child: TextFormField(
+                              initialValue: _customDays.toString(),
+                              keyboardType: TextInputType.number,
+                              textInputAction: TextInputAction.done,
+                              decoration: const InputDecoration(
+                                isDense: true,
+                                contentPadding: EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 8,
+                                ),
+                              ),
+                              onChanged: (value) {
+                                final days = int.tryParse(value);
+                                if (days != null && days > 0) {
+                                  setState(() {
+                                    // 1〜365の範囲に制限
+                                    _customDays = days.clamp(1, 365);
+                                  });
+                                }
+                              },
+                              onFieldSubmitted: (_) {
+                                FocusScope.of(context).unfocus();
+                              },
+                            ),
+                          ),
+                          const Text(' 日ごと（最大365日）'),
+                        ],
+                      ),
+                      onTap: null, // タップ無効化
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // 完了必須フラグ（カスタム（何日ごと）の場合のみ表示）
+              if (_repeatType == RepeatType.custom)
+                Card(
+                  child: SwitchListTile(
+                    secondary: const Icon(Icons.flag),
+                    title: const Text('完了必須'),
+                    subtitle: const Text(
+                      '有効：完了後に次の予定を作成\n無効：指定日数ごとに自動作成',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                    value: _requiresCompletion,
+                    onChanged: (value) {
+                      setState(() {
+                        _requiresCompletion = value;
+                      });
+                    },
+                  ),
+                ),
+              if (_repeatType == RepeatType.custom) const SizedBox(height: 16),
+
+              // 開始日選択（繰り返しなしとカスタムの場合のみ表示）
+              if (_repeatType == RepeatType.none || _repeatType == RepeatType.custom)
+                Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.event),
+                    title: const Text('開始日'),
+                    subtitle: Text(
+                      '${_startDate.year}年${_startDate.month}月${_startDate.day}日',
+                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    ),
+                    trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                    onTap: () async {
+                      final picked = await showDatePicker(
+                        context: context,
+                        initialDate: _startDate,
+                        firstDate: DateTime(2020),
+                        lastDate: DateTime(2100),
+                        locale: const Locale('ja', 'JP'),
+                      );
+                      if (picked != null) {
+                        setState(() {
+                          _startDate = picked;
+                        });
+                      }
+                    },
+                  ),
+                ),
+              if (_repeatType == RepeatType.none || _repeatType == RepeatType.custom) const SizedBox(height: 16),
+              const SizedBox(height: 24),
+
+              // 保存ボタン
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: _saveSchedule,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blue,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    elevation: 2,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  child: Text(
+                    widget.scheduleId == null ? '予定を作成' : '予定を更新',
                     style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                   ),
-                  trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-                  onTap: () async {
-                    final picked = await showDatePicker(
-                      context: context,
-                      initialDate: _startDate,
-                      firstDate: DateTime(2020),
-                      lastDate: DateTime(2100),
-                      locale: const Locale('ja', 'JP'),
-                    );
-                    if (picked != null) {
-                      setState(() {
-                        _startDate = picked;
-                      });
-                    }
-                  },
                 ),
               ),
-            if (_repeatType == RepeatType.none || _repeatType == RepeatType.custom) const SizedBox(height: 16),
-            const SizedBox(height: 24),
-
-            // 保存ボタン
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: _saveSchedule,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blue,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  elevation: 2,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                ),
-                child: Text(
-                  widget.scheduleId == null ? '予定を作成' : '予定を更新',
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                ),
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

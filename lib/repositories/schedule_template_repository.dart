@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 import '../models/schedule_template.dart';
 import '../models/group_role.dart';
 import '../constants/app_messages.dart';
@@ -178,27 +179,37 @@ class ScheduleTemplateRepository {
   /// テンプレートを取得
   Future<ScheduleTemplate?> getTemplate(String templateId) async {
     try {
-      print('🔍 Getting template: $templateId');
-      print('📂 Collection: $_collectionName');
-      print('🔗 Full path: ${_collection.path}/$templateId');
+      if (kDebugMode) {
+        print('🔍 Getting template: $templateId');
+        print('📂 Collection: $_collectionName');
+        print('🔗 Full path: ${_collection.path}/$templateId');
+      }
 
       final doc = await _collection.doc(templateId).get();
 
-      print('📄 Document exists: ${doc.exists}');
-      if (doc.exists) {
-        print('📋 Document data: ${doc.data()}');
+      if (kDebugMode) {
+        print('📄 Document exists: ${doc.exists}');
+        if (doc.exists) {
+          print('📋 Document data: ${doc.data()}');
+        }
       }
 
       if (!doc.exists) {
-        print('⚠️ Template not found: $templateId');
+        if (kDebugMode) {
+          print('⚠️ Template not found: $templateId');
+        }
         return null;
       }
       final template = ScheduleTemplate.fromFirestore(doc);
-      print(
-          '✅ Template loaded: ${template.title}, isGroupSchedule: ${template.isGroupSchedule}, groupId: ${template.groupId}');
+      if (kDebugMode) {
+        print(
+            '✅ Template loaded: ${template.title}, isGroupSchedule: ${template.isGroupSchedule}, groupId: ${template.groupId}');
+      }
       return template;
     } catch (e) {
-      print('❌ Error getting template: $e');
+      if (kDebugMode) {
+        print('❌ Error getting template: $e');
+      }
       throw Exception('テンプレートの取得に失敗しました: $e');
     }
   }
@@ -250,31 +261,41 @@ class ScheduleTemplateRepository {
 
   /// テンプレートをリアルタイムで監視
   Stream<List<ScheduleTemplate>> watchTemplatesByUserId(String userId) {
-    print('🔍 Watching templates for userId: $userId');
+    if (kDebugMode) {
+      print('🔍 Watching templates for userId: $userId');
+    }
     return _collection
         .where('userId', isEqualTo: userId)
         .where('isActive', isEqualTo: true)
         .orderBy('createdAt', descending: true)
         .snapshots()
         .map((snapshot) {
-      print('📋 Found ${snapshot.docs.length} templates for user');
+      if (kDebugMode) {
+        print('📋 Found ${snapshot.docs.length} templates for user');
+      }
       return snapshot.docs.map((doc) => ScheduleTemplate.fromFirestore(doc)).toList();
     });
   }
 
   /// グループテンプレートをリアルタイムで監視
   Stream<List<ScheduleTemplate>> watchGroupTemplates(String groupId) {
-    print('🔍 Watching templates for groupId: $groupId');
+    if (kDebugMode) {
+      print('🔍 Watching templates for groupId: $groupId');
+    }
     return _collection
         .where('groupId', isEqualTo: groupId)
         .where('isActive', isEqualTo: true)
         .orderBy('createdAt', descending: true)
         .snapshots()
         .map((snapshot) {
-      print('📋 Found ${snapshot.docs.length} templates for group');
+      if (kDebugMode) {
+        print('📋 Found ${snapshot.docs.length} templates for group');
+      }
       return snapshot.docs.map((doc) => ScheduleTemplate.fromFirestore(doc)).toList();
     }).handleError((error) {
-      print('❌ Error watching group templates: $error');
+      if (kDebugMode) {
+        print('❌ Error watching group templates: $error');
+      }
       throw error;
     });
   }

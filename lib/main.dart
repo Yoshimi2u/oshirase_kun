@@ -19,7 +19,6 @@ import 'firebase_options.dart';
 import 'services/auth_service.dart';
 import 'services/analytics_service.dart';
 import 'widgets/global_loading_overlay.dart';
-import 'widgets/global_banner_ad.dart';
 import 'services/loading_service.dart';
 import 'providers/theme_provider.dart';
 
@@ -272,7 +271,7 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
         final base = child ?? const SizedBox.shrink();
         return Stack(
           children: [
-            GlobalBannerAd(child: base),
+            base,
             const GlobalLoadingOverlay(),
           ],
         );

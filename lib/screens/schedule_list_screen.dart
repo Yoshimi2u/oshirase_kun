@@ -7,14 +7,18 @@ import '../providers/task_provider.dart'
     show
         todayTasksStreamProvider,
         upcomingTasksProvider,
+        extendedUpcomingTasksProvider,
         tasksByDateRangeProvider,
         taskRepositoryProvider,
-        currentUserIdProvider;
+        currentUserIdProvider,
+        DateRangeParams;
 import '../providers/schedule_template_provider.dart' as template_provider;
 import '../providers/user_profile_provider.dart';
 import '../providers/group_provider.dart';
 import '../constants/app_spacing.dart';
 import '../utils/toast_utils.dart';
+import '../widgets/inline_banner_ad.dart';
+import '../services/ad_manager.dart';
 import 'package:go_router/go_router.dart';
 import 'calendar_screen.dart';
 
@@ -29,6 +33,8 @@ class ScheduleListScreen extends ConsumerStatefulWidget {
 class _ScheduleListScreenState extends ConsumerState<ScheduleListScreen> with SingleTickerProviderStateMixin {
   late TabController _tabController;
   bool _isRefreshing = false;
+  bool _refreshCompleted = false;
+  Timer? _completedTimer;
   DateTime? _lastRefreshTime;
 
   @override
@@ -46,6 +52,7 @@ class _ScheduleListScreenState extends ConsumerState<ScheduleListScreen> with Si
 
   @override
   void dispose() {
+    _completedTimer?.cancel();
     _tabController.removeListener(_onTabChanged);
     _tabController.dispose();
     super.dispose();
@@ -82,22 +89,52 @@ class _ScheduleListScreenState extends ConsumerState<ScheduleListScreen> with Si
 
     setState(() {
       _isRefreshing = true;
+      _refreshCompleted = false;
       _lastRefreshTime = DateTime.now();
     });
 
     try {
+      // 予定一覧タブとカレンダータブの両方を更新
       if (_tabController.index == 1) {
-        // 予定一覧タブ
+        // 予定一覧タブから更新
         ref.invalidate(upcomingTasksProvider);
+        ref.invalidate(tasksByDateRangeProvider);
         await ref.read(upcomingTasksProvider.future);
       } else if (_tabController.index == 2) {
-        // カレンダータブ
+        // カレンダータブから更新
+        ref.invalidate(upcomingTasksProvider);
         ref.invalidate(tasksByDateRangeProvider);
+        // 現在の月（当月のみ）のデータを取得
+        final now = DateTime.now();
+        final startDate = DateTime(now.year, now.month, 1);
+        final endDate = DateTime(now.year, now.month + 1, 0);
+        await ref.read(tasksByDateRangeProvider(
+          DateRangeParams(startDate: startDate, endDate: endDate),
+        ).future);
       }
-    } finally {
+
+      // 更新完了表示
       if (mounted) {
         setState(() {
           _isRefreshing = false;
+          _refreshCompleted = true;
+        });
+
+        // 1秒後にチェックマークを消す
+        _completedTimer?.cancel();
+        _completedTimer = Timer(const Duration(seconds: 1), () {
+          if (mounted) {
+            setState(() {
+              _refreshCompleted = false;
+            });
+          }
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isRefreshing = false;
+          _refreshCompleted = false;
         });
       }
     }
@@ -157,19 +194,21 @@ class _ScheduleListScreenState extends ConsumerState<ScheduleListScreen> with Si
                           alignment: Alignment.center,
                           children: [
                             IconButton(
-                              icon: _isRefreshing
-                                  ? const SizedBox(
-                                      width: 20,
-                                      height: 20,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                                      ),
-                                    )
-                                  : const Icon(Icons.refresh),
+                              icon: _refreshCompleted
+                                  ? const Icon(Icons.check, color: Colors.white)
+                                  : _isRefreshing
+                                      ? const SizedBox(
+                                          width: 20,
+                                          height: 20,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                          ),
+                                        )
+                                      : const Icon(Icons.refresh),
                               iconSize: 22,
                               tooltip: '更新',
-                              onPressed: _isRefreshing ? null : _handleRefresh,
+                              onPressed: _isRefreshing || _refreshCompleted ? null : _handleRefresh,
                             ),
                           ],
                         ),
@@ -263,11 +302,20 @@ class _ScheduleListScreenState extends ConsumerState<ScheduleListScreen> with Si
 }
 
 /// 今日のタスクタブ
-class _TodayTasksTab extends ConsumerWidget {
+class _TodayTasksTab extends ConsumerStatefulWidget {
   const _TodayTasksTab();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_TodayTasksTab> createState() => _TodayTasksTabState();
+}
+
+class _TodayTasksTabState extends ConsumerState<_TodayTasksTab> with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context); // AutomaticKeepAliveClientMixinのために必要
     final todayAsync = ref.watch(todayTasksStreamProvider);
 
     return todayAsync.when(
@@ -327,6 +375,8 @@ class _TodayTasksTab extends ConsumerWidget {
                   )),
               const SizedBox(height: 16),
             ],
+            // インラインバナー広告（未完了と完了の間）
+            InlineBannerAd(adUnitId: AdManager.inlineBannerAdUnitId),
             if (completedTasks.isNotEmpty) ...[
               _SectionHeader(
                 title: '完了済み (${completedTasks.length}件)',
@@ -349,12 +399,23 @@ class _TodayTasksTab extends ConsumerWidget {
 }
 
 /// 全予定タブ（明日以降のタスクを日付別に表示）
-class _AllSchedulesTab extends ConsumerWidget {
+class _AllSchedulesTab extends ConsumerStatefulWidget {
   const _AllSchedulesTab();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final tasksAsync = ref.watch(upcomingTasksProvider);
+  ConsumerState<_AllSchedulesTab> createState() => _AllSchedulesTabState();
+}
+
+class _AllSchedulesTabState extends ConsumerState<_AllSchedulesTab> with AutomaticKeepAliveClientMixin {
+  bool _showExtended = false;
+
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context); // AutomaticKeepAliveClientMixinのために必要
+    final tasksAsync = _showExtended ? ref.watch(extendedUpcomingTasksProvider) : ref.watch(upcomingTasksProvider);
 
     return tasksAsync.when(
       data: (tasks) {
@@ -401,9 +462,39 @@ class _AllSchedulesTab extends ConsumerWidget {
 
         return ListView.builder(
           padding: const EdgeInsets.all(8),
-          itemCount: sortedKeys.length,
+          itemCount: sortedKeys.length + 2, // +1 for ad, +1 for "Load More" button
           itemBuilder: (context, index) {
-            final dateKey = sortedKeys[index];
+            // 3日目の後（index=3）にインライン広告を表示
+            if (index == 3 && sortedKeys.length > 3) {
+              return InlineBannerAd(adUnitId: AdManager.scheduleInlineBannerAdUnitId);
+            }
+
+            // 広告がある場合はindexを調整
+            final adjustedIndex = index > 3 && sortedKeys.length > 3 ? index - 1 : index;
+
+            // 最後のアイテムは「もっと見る」ボタン
+            if (adjustedIndex == sortedKeys.length) {
+              if (_showExtended) {
+                return const SizedBox.shrink();
+              }
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
+                child: OutlinedButton.icon(
+                  onPressed: () {
+                    setState(() {
+                      _showExtended = true;
+                    });
+                  },
+                  icon: const Icon(Icons.expand_more),
+                  label: const Text('もっと見る（翌月末まで）'),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                ),
+              );
+            }
+
+            final dateKey = sortedKeys[adjustedIndex];
             final tasksForDate = groupedTasks[dateKey]!;
             final firstTask = tasksForDate.first;
             final date = firstTask.scheduledDate;

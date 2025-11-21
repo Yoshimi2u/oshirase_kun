@@ -18,10 +18,13 @@ class CalendarScreen extends ConsumerStatefulWidget {
   ConsumerState<CalendarScreen> createState() => _CalendarScreenState();
 }
 
-class _CalendarScreenState extends ConsumerState<CalendarScreen> {
+class _CalendarScreenState extends ConsumerState<CalendarScreen> with AutomaticKeepAliveClientMixin {
   late DateTime _focusedDay;
   late DateTime _selectedDay;
   CalendarFormat _calendarFormat = CalendarFormat.month;
+
+  @override
+  bool get wantKeepAlive => true;
 
   @override
   void initState() {
@@ -32,9 +35,10 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // カレンダーの表示範囲（前月1日～翌月末日）のタスクを取得
-    final startDate = DateTime(_focusedDay.year, _focusedDay.month - 1, 1);
-    final endDate = DateTime(_focusedDay.year, _focusedDay.month + 2, 0);
+    super.build(context); // AutomaticKeepAliveClientMixinのために必要
+    // カレンダーの表示範囲（当月のみ）のタスクを取得
+    final startDate = DateTime(_focusedDay.year, _focusedDay.month, 1);
+    final endDate = DateTime(_focusedDay.year, _focusedDay.month + 1, 0);
 
     final tasksAsync = ref.watch(
       tasksByDateRangeProvider(
@@ -97,7 +101,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
           color: Colors.orange,
           shape: BoxShape.circle,
         ),
-        markersMaxCount: 3,
+        markersMaxCount: 1, // マーカーは1つのみ（数字表示用）
       ),
       headerStyle: HeaderStyle(
         formatButtonVisible: true,
@@ -107,6 +111,32 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
           borderRadius: BorderRadius.circular(8),
         ),
         formatButtonTextStyle: const TextStyle(color: Colors.white),
+      ),
+      // カスタムビルダーでタスク数を表示
+      calendarBuilders: CalendarBuilders(
+        markerBuilder: (context, date, events) {
+          if (events.isEmpty) return null;
+
+          return Positioned(
+            top: 2,
+            right: 2,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+              decoration: BoxDecoration(
+                color: Colors.orange,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                '${events.length}',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          );
+        },
       ),
       onDaySelected: (selectedDay, focusedDay) {
         setState(() {

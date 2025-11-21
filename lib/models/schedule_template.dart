@@ -6,6 +6,7 @@ enum RepeatType {
   daily, // 毎日
   customWeekly, // 曜日指定
   monthly, // 毎月
+  monthlyLastDay, // 毎月末日
   custom, // カスタム（〇日ごと）
 }
 
@@ -140,6 +141,8 @@ class ScheduleTemplate {
         return '毎週（$names）';
       case RepeatType.monthly:
         return '毎月${monthlyDay ?? 1}日';
+      case RepeatType.monthlyLastDay:
+        return '毎月末日';
       case RepeatType.custom:
         return '$repeatInterval日ごと';
     }
@@ -181,6 +184,19 @@ class ScheduleTemplate {
         }
 
         return DateTime(nextYear, nextMonth, day);
+
+      case RepeatType.monthlyLastDay:
+        // 翌月の月末を計算
+        int nextMonth = baseDate.month + 1;
+        int nextYear = baseDate.year;
+        if (nextMonth > 12) {
+          nextMonth = 1;
+          nextYear++;
+        }
+
+        // 翌月の末日を取得（翌々月の0日 = 翌月の末日）
+        final lastDayOfNextMonth = DateTime(nextYear, nextMonth + 1, 0);
+        return DateTime(lastDayOfNextMonth.year, lastDayOfNextMonth.month, lastDayOfNextMonth.day);
 
       case RepeatType.custom:
         if (repeatInterval == null || repeatInterval! <= 0) {
@@ -269,6 +285,19 @@ class ScheduleTemplate {
           final nextMonth = today.month == 12 ? 1 : today.month + 1;
           final nextYear = today.month == 12 ? today.year + 1 : today.year;
           currentDate = DateTime(nextYear, nextMonth, day);
+        }
+        break;
+
+      case RepeatType.monthlyLastDay:
+        // 毎月末日: 今月の末日がまだ来ていないか今日なら今月の末日、過ぎていれば来月の末日
+        final lastDayOfThisMonth = DateTime(today.year, today.month + 1, 0);
+
+        if (lastDayOfThisMonth.day >= today.day) {
+          currentDate = DateTime(lastDayOfThisMonth.year, lastDayOfThisMonth.month, lastDayOfThisMonth.day);
+        } else {
+          // 来月の末日
+          final lastDayOfNextMonth = DateTime(today.year, today.month + 2, 0);
+          currentDate = DateTime(lastDayOfNextMonth.year, lastDayOfNextMonth.month, lastDayOfNextMonth.day);
         }
         break;
 

@@ -51,6 +51,7 @@ enum RepeatType {
   DAILY = "daily",
   CUSTOM_WEEKLY = "customWeekly",
   MONTHLY = "monthly",
+  MONTHLY_LAST_DAY = "monthlyLastDay",
   CUSTOM = "custom",
 }
 
@@ -630,6 +631,19 @@ function calculateNextTaskDate(
     }
 
     return new Date(nextYear, nextMonth, day);
+  }
+
+  case RepeatType.MONTHLY_LAST_DAY: {
+    // 翌月の月末を計算
+    let nextMonth = baseDate.getMonth() + 1;
+    let nextYear = baseDate.getFullYear();
+    if (nextMonth > 11) {
+      nextMonth = 0;
+      nextYear++;
+    }
+    
+    // 翌月の末日を取得（翌々月の0日 = 翌月の末日）
+    return new Date(nextYear, nextMonth + 1, 0);
   }
 
   case RepeatType.CUSTOM: {

@@ -194,6 +194,8 @@ class Task {
       case 'monthly':
         if (monthlyDay == null || monthlyDay! < 1 || monthlyDay! > 28) return '毎月';
         return '毎月${monthlyDay}日';
+      case 'monthlyLastDay':
+        return '毎月末日';
       case 'custom':
         if (repeatInterval == null || repeatInterval! <= 1) return '';
         return '$repeatInterval日ごと';

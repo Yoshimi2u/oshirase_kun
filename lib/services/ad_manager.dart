@@ -28,7 +28,7 @@ class AdManager {
 
   // インタースティシャル広告は未使用のためIDは廃止
 
-  /// 設定画面などのインライン表示用バナー広告ユニットIDを取得
+  /// 設定画面などのインライン表示用バナー広告ユニットIDを取得（今日のタスク用）
   static String get inlineBannerAdUnitId {
     if (kDebugMode) {
       print('[AdManager] テスト用インラインバナー広告ID使用');
@@ -44,6 +44,27 @@ class AdManager {
         return dotenv.env['ADMOB_INLINE_BANNER_ANDROID'] ?? 'ca-app-pub-3940256099942544/6300978111';
       } else if (Platform.isIOS) {
         return dotenv.env['ADMOB_INLINE_BANNER_IOS'] ?? 'ca-app-pub-3940256099942544/2934735716';
+      }
+    }
+    throw UnsupportedError('Unsupported platform');
+  }
+
+  /// 全予定タブ用のインライン表示用バナー広告ユニットIDを取得
+  static String get scheduleInlineBannerAdUnitId {
+    if (kDebugMode) {
+      print('[AdManager] テスト用全予定タブインラインバナー広告ID使用');
+      // デバッグモードではテスト用IDを使用
+      if (Platform.isAndroid) {
+        return 'ca-app-pub-3940256099942544/6300978111';
+      } else if (Platform.isIOS) {
+        return 'ca-app-pub-3940256099942544/2934735716';
+      }
+    } else {
+      // 本番環境では.envから読み込み
+      if (Platform.isAndroid) {
+        return dotenv.env['ADMOB_SCHEDULE_INLINE_BANNER_ANDROID'] ?? 'ca-app-pub-3940256099942544/6300978111';
+      } else if (Platform.isIOS) {
+        return dotenv.env['ADMOB_SCHEDULE_INLINE_BANNER_IOS'] ?? 'ca-app-pub-3940256099942544/2934735716';
       }
     }
     throw UnsupportedError('Unsupported platform');

@@ -156,7 +156,7 @@ final todayTasksStreamProvider = StreamProvider.autoDispose<List<Task>>((ref) {
   }
 });
 
-/// 明日以降のタスク一覧のプロバイダー（予定一覧画面用）
+/// 明日以降のタスク一覧のプロバイダー（予定一覧画面用、1週間分）
 final upcomingTasksProvider = FutureProvider.autoDispose<List<Task>>((ref) async {
   final userId = ref.watch(currentUserIdProvider);
 
@@ -164,9 +164,74 @@ final upcomingTasksProvider = FutureProvider.autoDispose<List<Task>>((ref) async
     return [];
   }
 
-  // 5分間キャッシュを保持（短時間の画面遷移に対応）
+  // 30分間キャッシュを保持（Firestore読み取り回数削減）
   final link = ref.keepAlive();
-  Timer(const Duration(minutes: 5), () {
+  Timer(const Duration(minutes: 30), () {
+    link.close();
+  });
+
+  try {
+    final repository = ref.watch(taskRepositoryProvider);
+    final tomorrow = DateTime.now().add(const Duration(days: 1));
+    final startDate = DateTime(tomorrow.year, tomorrow.month, tomorrow.day);
+    // 1週間分のみ取得
+    final endDate = startDate.add(const Duration(days: 7));
+
+    // 自分のタスクを取得（Future版）
+    final myTasks = await repository.getTasksByDateRange(userId, startDate, endDate);
+
+    // グループ一覧を取得
+    final groups = await ref.watch(userGroupsStreamProvider.future);
+
+    if (groups.isEmpty) {
+      // グループがない場合は自分のタスクのみ
+      return myTasks;
+    }
+
+    // すべてのタスクを結合
+    final allTasks = <Task>[...myTasks];
+
+    // 各グループタスクを取得
+    for (final group in groups) {
+      try {
+        final groupTasks = await repository.getGroupTasksByDateRange(
+          group.id,
+          startDate,
+          endDate,
+        );
+        allTasks.addAll(groupTasks);
+      } catch (e) {
+        // エラーが発生しても続行（他のグループタスクは取得）
+        continue;
+      }
+    }
+
+    // 重複を削除（同じIDのタスク）
+    final uniqueTasks = <String, Task>{};
+    for (final task in allTasks) {
+      uniqueTasks[task.id] = task;
+    }
+
+    // scheduledDateでソート
+    final sortedTasks = uniqueTasks.values.toList()..sort((a, b) => a.scheduledDate.compareTo(b.scheduledDate));
+
+    return sortedTasks;
+  } catch (e) {
+    return [];
+  }
+});
+
+/// 明日以降のタスク一覧のプロバイダー（拡張版：翌月末まで）
+final extendedUpcomingTasksProvider = FutureProvider.autoDispose<List<Task>>((ref) async {
+  final userId = ref.watch(currentUserIdProvider);
+
+  if (userId == null) {
+    return [];
+  }
+
+  // 30分間キャッシュを保持（Firestore読み取り回数削減）
+  final link = ref.keepAlive();
+  Timer(const Duration(minutes: 30), () {
     link.close();
   });
 
@@ -364,9 +429,9 @@ final tasksByDateRangeProvider = FutureProvider.autoDispose.family<List<Task>, D
     return [];
   }
 
-  // 5分間キャッシュを保持（月切り替え時の再読み取りを防ぐ）
+  // 30分間キャッシュを保持（月切り替え時の再読み取りを防ぐ、Firestore読み取り回数削減）
   final link = ref.keepAlive();
-  Timer(const Duration(minutes: 5), () {
+  Timer(const Duration(minutes: 30), () {
     link.close();
   });
 

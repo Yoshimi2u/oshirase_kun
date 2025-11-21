@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 import '../models/schedule_instance.dart';
 import '../models/group_role.dart';
 import '../constants/app_messages.dart';
@@ -186,7 +187,9 @@ class TaskRepository {
       // templateIdのみでクエリ（グループタスクも含めて削除）
       final querySnapshot = await _collection.where('templateId', isEqualTo: templateId).get();
 
-      print('🗑️ Deleting ${querySnapshot.docs.length} tasks for templateId: $templateId');
+      if (kDebugMode) {
+        print('🗑️ Deleting ${querySnapshot.docs.length} tasks for templateId: $templateId');
+      }
 
       if (querySnapshot.docs.isNotEmpty) {
         // 最初のタスクから権限チェック（全て同じグループまたは個人タスク）
@@ -226,9 +229,13 @@ class TaskRepository {
         await doc.reference.delete();
       }
 
-      print('✅ Successfully deleted all tasks for templateId: $templateId');
+      if (kDebugMode) {
+        print('✅ Successfully deleted all tasks for templateId: $templateId');
+      }
     } catch (e) {
-      print('❌ Error deleting tasks: $e');
+      if (kDebugMode) {
+        print('❌ Error deleting tasks: $e');
+      }
       if (e.toString().contains('Exception:')) {
         rethrow;
       }
