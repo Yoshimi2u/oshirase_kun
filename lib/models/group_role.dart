@@ -89,7 +89,7 @@ extension GroupRoleExtension on GroupRole {
       case GroupRole.admin:
         return 'グループの管理と繰り返しタスクの編集が可能';
       case GroupRole.member:
-        return 'タスクの追加・完了が可能';
+        return 'タスクの完了が可能';
     }
   }
 

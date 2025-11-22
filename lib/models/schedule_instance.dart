@@ -28,6 +28,12 @@ class Task {
   final int? repeatInterval; // カスタム繰り返しの場合の日数
   final int? monthlyDay; // 毎月の指定日（1〜28）
 
+  // 仮想タスクフラグ（14日以降の表示専用タスク）
+  final bool isVirtual;
+
+  // 論理削除フラグ（個別タスク削除時に使用）
+  final bool isDeleted;
+
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -46,6 +52,8 @@ class Task {
     this.weekdays,
     this.repeatInterval,
     this.monthlyDay,
+    this.isVirtual = false,
+    this.isDeleted = false,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -68,6 +76,7 @@ class Task {
       weekdays: data['weekdays'] != null ? List<int>.from(data['weekdays']) : null,
       repeatInterval: data['repeatInterval'],
       monthlyDay: data['monthlyDay'],
+      isDeleted: data['isDeleted'] ?? false,
       createdAt: (data['createdAt'] as Timestamp).toDate(),
       updatedAt: (data['updatedAt'] as Timestamp).toDate(),
     );
@@ -89,6 +98,7 @@ class Task {
       'weekdays': weekdays,
       'repeatInterval': repeatInterval,
       'monthlyDay': monthlyDay,
+      'isDeleted': isDeleted,
       'createdAt': Timestamp.fromDate(createdAt),
       'updatedAt': Timestamp.fromDate(updatedAt),
     };
@@ -110,6 +120,8 @@ class Task {
     List<int>? weekdays,
     int? repeatInterval,
     int? monthlyDay,
+    bool? isVirtual,
+    bool? isDeleted,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -128,6 +140,8 @@ class Task {
       weekdays: weekdays ?? this.weekdays,
       repeatInterval: repeatInterval ?? this.repeatInterval,
       monthlyDay: monthlyDay ?? this.monthlyDay,
+      isVirtual: isVirtual ?? this.isVirtual,
+      isDeleted: isDeleted ?? this.isDeleted,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
@@ -197,7 +211,7 @@ class Task {
       case 'monthlyLastDay':
         return '毎月末日';
       case 'custom':
-        if (repeatInterval == null || repeatInterval! <= 1) return '';
+        if (repeatInterval == null) return '';
         return '$repeatInterval日ごと';
       case 'none':
       default:

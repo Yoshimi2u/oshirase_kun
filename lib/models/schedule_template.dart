@@ -10,6 +10,20 @@ enum RepeatType {
   custom, // カスタム（〇日ごと）
 }
 
+/// RepeatType拡張メソッド
+extension RepeatTypeExtension on RepeatType {
+  /// Firestore保存用の文字列（"customWeekly"形式）
+  String get value => name;
+
+  /// 文字列からRepeatTypeを取得
+  static RepeatType fromString(String value) {
+    return RepeatType.values.firstWhere(
+      (e) => e.name == value,
+      orElse: () => RepeatType.none,
+    );
+  }
+}
+
 /// 予定テンプレート（繰り返し設定を保持する親要素）
 class ScheduleTemplate {
   final String id;
@@ -55,9 +69,8 @@ class ScheduleTemplate {
       userId: data['userId'] ?? '',
       title: data['title'] ?? '',
       description: data['description'] ?? '',
-      repeatType: RepeatType.values.firstWhere(
-        (e) => e.toString() == data['repeatType'],
-        orElse: () => RepeatType.none,
+      repeatType: RepeatTypeExtension.fromString(
+        data['repeatType'] ?? 'none',
       ),
       repeatInterval: data['repeatInterval'],
       selectedWeekdays: (data['selectedWeekdays'] as List<dynamic>?)?.map((e) => e as int).toList(),
@@ -77,7 +90,7 @@ class ScheduleTemplate {
       'userId': userId,
       'title': title,
       'description': description,
-      'repeatType': repeatType.toString(),
+      'repeatType': repeatType.value,
       'repeatInterval': repeatInterval,
       'selectedWeekdays': selectedWeekdays,
       'monthlyDay': monthlyDay,

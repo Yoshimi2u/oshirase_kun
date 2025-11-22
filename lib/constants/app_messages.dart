@@ -11,10 +11,8 @@ class AppMessages {
   // 削除関連
   static const String deleteScheduleConfirm = 'この予定を削除しますか?\n（関連するタスクも全て削除されます）';
   static const String deleteSingleTaskConfirm = 'のタスクを削除しますか?';
-  static const String deleteFutureTasksConfirm = '今後の未完了タスクをすべて削除しますか?\n（繰り返し予定も削除されます）';
   static const String deleteSuccess = '予定を削除しました';
   static const String deleteTaskSuccess = 'タスクを削除しました';
-  static const String deleteFutureTasksSuccess = '今後のタスクと予定を削除しました';
   static const String deleteFailed = '削除に失敗しました';
   static const String deleteMethodTitle = '削除方法を選択';
   static const String deleteMethodMessage = 'この予定は繰り返し設定があります。\nどのように削除しますか?';
@@ -29,6 +27,12 @@ class AppMessages {
   static const String buttonComplete = '完了';
   static const String buttonThisTaskOnly = 'このタスクのみ';
   static const String buttonFutureAll = '今後のすべて';
+
+  // 編集関連
+  static const String editMethodTitle = '編集方法を選択';
+  static const String editMethodMessage = 'この予定は繰り返し設定があります。\nどのように編集しますか?';
+  static const String editThisTaskOnly = 'このタスクのみ編集';
+  static const String editFutureAll = '今後のすべてを編集';
 
   // 空状態メッセージ
   static const String noTasksToday = '今日のタスクはありません';

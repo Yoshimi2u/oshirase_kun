@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'services/analytics_service.dart';
 import 'screens/schedule_list_screen.dart';
 import 'screens/schedule_form_screen.dart';
+import 'screens/task_edit_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/calendar_screen.dart';
 import 'screens/group_screen.dart';
@@ -44,6 +45,7 @@ class AnalyticsRouteObserver extends NavigatorObserver {
       '/': 'ホーム',
       '/schedule/create': '予定作成',
       '/schedule/edit': '予定編集',
+      '/task/edit': 'タスク編集',
       '/calendar': 'カレンダー',
       '/settings': '設定',
       '/groups': 'グループ管理',
@@ -97,6 +99,15 @@ final GoRouter router = GoRouter(
             initialDate: initialDate,
             taskId: taskId,
           ),
+        );
+      },
+    ),
+    GoRoute(
+      path: '/task/edit/:id',
+      pageBuilder: (context, state) {
+        final id = state.pathParameters['id']!;
+        return _buildPageWithAnimation(
+          TaskEditScreen(taskId: id),
         );
       },
     ),

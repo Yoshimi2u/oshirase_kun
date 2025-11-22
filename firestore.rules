@@ -117,9 +117,11 @@ service cloud.firestore {
                && request.resource.data.groupId != null;
       }
       
-      // グループメンバーかどうかを確認
+      // グループメンバーかどうかを確認（memberIdsまたはmemberRolesをチェック）
       function isGroupMember(groupId) {
-        return request.auth.uid in get(/databases/$(database)/documents/groups/$(groupId)).data.memberIds;
+        let groupData = get(/databases/$(database)/documents/groups/$(groupId)).data;
+        return (groupData.keys().hasAny(['memberIds']) && request.auth.uid in groupData.memberIds)
+            || (groupData.keys().hasAny(['memberRoles']) && request.auth.uid in groupData.memberRoles.keys());
       }
       
       // 読み取り: 自分の予定 または グループ予定でメンバーの場合
@@ -167,9 +169,11 @@ service cloud.firestore {
     
     // 完了履歴データ
     match /users/{userId}/completion_history/{historyId} {
-      // グループメンバーかどうかを確認
+      // グループメンバーかどうかを確認（memberIdsまたはmemberRolesをチェック）
       function isGroupMemberForHistory(groupId) {
-        return request.auth.uid in get(/databases/$(database)/documents/groups/$(groupId)).data.memberIds;
+        let groupData = get(/databases/$(database)/documents/groups/$(groupId)).data;
+        return (groupData.keys().hasAny(['memberIds']) && request.auth.uid in groupData.memberIds)
+            || (groupData.keys().hasAny(['memberRoles']) && request.auth.uid in groupData.memberRoles.keys());
       }
       
       // 読み取り: 自分の完了履歴のみ
@@ -218,12 +222,19 @@ service cloud.firestore {
       // グループの作成: 認証済みユーザーが自分をオーナーとして作成
       allow create: if request.auth != null
                     && request.auth.uid == request.resource.data.ownerId
-                    && request.auth.uid in request.resource.data.memberIds
+                    && (
+                      // memberIds方式の場合
+                      (request.resource.data.keys().hasAny(['memberIds']) 
+                       && request.auth.uid in request.resource.data.memberIds)
+                      ||
+                      // memberRoles方式の場合
+                      (request.resource.data.keys().hasAny(['memberRoles'])
+                       && request.auth.uid in request.resource.data.memberRoles.keys())
+                    )
                     && request.resource.data.keys().hasAll([
                       'name',
                       'inviteCode',
                       'ownerId',
-                      'memberIds',
                       'isActive',
                       'isJoinable',
                       'createdAt',
@@ -233,8 +244,6 @@ service cloud.firestore {
                     && request.resource.data.name.size() > 0
                     && request.resource.data.inviteCode is string
                     && request.resource.data.inviteCode.size() == 6
-                    && request.resource.data.memberIds is list
-                    && request.resource.data.memberIds.size() > 0
                     && request.resource.data.isActive is bool
                     && request.resource.data.isJoinable is bool
                     && request.resource.data.createdAt is timestamp
@@ -245,13 +254,21 @@ service cloud.firestore {
       // 2. 新しいユーザーが自分自身をメンバーに追加する（グループ参加）
       allow update: if request.auth != null
                     && (
-                      // 既存メンバーによる更新
-                      (request.auth.uid in resource.data.memberIds)
+                      // 既存メンバーによる更新（memberIdsまたはmemberRoles）
+                      (resource.data.keys().hasAny(['memberIds']) && request.auth.uid in resource.data.memberIds)
+                      || (resource.data.keys().hasAny(['memberRoles']) && request.auth.uid in resource.data.memberRoles.keys())
                       ||
                       // 新規ユーザーが自分をメンバーに追加する場合
-                      (request.auth.uid in request.resource.data.memberIds 
+                      (request.resource.data.keys().hasAny(['memberIds']) 
+                       && request.auth.uid in request.resource.data.memberIds 
+                       && resource.data.keys().hasAny(['memberIds'])
                        && !(request.auth.uid in resource.data.memberIds)
                        && request.resource.data.memberIds.size() == resource.data.memberIds.size() + 1)
+                      ||
+                      (request.resource.data.keys().hasAny(['memberRoles'])
+                       && request.auth.uid in request.resource.data.memberRoles.keys()
+                       && resource.data.keys().hasAny(['memberRoles'])
+                       && !(request.auth.uid in resource.data.memberRoles.keys()))
                     )
                     // オーナーは変更不可
                     && request.resource.data.ownerId == resource.data.ownerId
@@ -259,10 +276,12 @@ service cloud.firestore {
                     && request.resource.data.inviteCode == resource.data.inviteCode
                     // グループ名は既存メンバーのみ変更可能
                     && (request.resource.data.name == resource.data.name 
-                        || request.auth.uid in resource.data.memberIds)
+                        || (resource.data.keys().hasAny(['memberIds']) && request.auth.uid in resource.data.memberIds)
+                        || (resource.data.keys().hasAny(['memberRoles']) && request.auth.uid in resource.data.memberRoles.keys()))
                     // isActiveは既存メンバーのみ変更可能
                     && (request.resource.data.isActive == resource.data.isActive
-                        || request.auth.uid in resource.data.memberIds)
+                        || (resource.data.keys().hasAny(['memberIds']) && request.auth.uid in resource.data.memberIds)
+                        || (resource.data.keys().hasAny(['memberRoles']) && request.auth.uid in resource.data.memberRoles.keys()))
                     // isJoinableはオーナーのみ変更可能
                     && (request.resource.data.isJoinable == resource.data.isJoinable
                         || request.auth.uid == resource.data.ownerId);

@@ -6,6 +6,7 @@ import '../services/auth_service.dart';
 import '../services/loading_service.dart';
 import '../utils/toast_utils.dart';
 import '../constants/app_messages.dart';
+import '../widgets/app_dialogs.dart';
 
 class AccountScreen extends ConsumerStatefulWidget {
   const AccountScreen({super.key});
@@ -92,24 +93,13 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
   }
 
   Future<void> _signOut() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) {
-        return AlertDialog(
-          title: const Text('サインアウト'),
-          content: const Text('サインアウトしますか？'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              child: const Text('キャンセル'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(true),
-              child: const Text('サインアウト'),
-            ),
-          ],
-        );
-      },
+    final confirmed = await ConfirmationDialog.show(
+      context,
+      title: 'サインアウト',
+      message: 'サインアウトしますか？',
+      icon: Icons.logout,
+      confirmColor: Colors.orange,
+      confirmText: 'サインアウト',
     );
 
     if (confirmed != true) return;
@@ -217,9 +207,12 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
 
           // 匿名ユーザーの場合のみ表示
           if (isAnonymous) ...[
-            const Text(
+            Text(
               'メールアドレスでアカウントを登録すると、端末間でデータを同期できます。',
-              style: TextStyle(fontSize: 14, color: Colors.black87),
+              style: TextStyle(
+                fontSize: 14,
+                color: Theme.of(context).brightness == Brightness.dark ? Colors.grey[400] : Colors.black87,
+              ),
             ),
             const SizedBox(height: 16),
 

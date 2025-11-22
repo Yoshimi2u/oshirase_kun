@@ -137,6 +137,7 @@ class GroupRepository {
     try {
       await _groupsCollection.doc(groupId).update({
         'memberIds': FieldValue.arrayRemove([userId]),
+        'memberRoles.$userId': FieldValue.delete(),
         'updatedAt': Timestamp.now(),
       });
     } catch (e) {

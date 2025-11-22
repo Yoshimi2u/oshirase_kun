@@ -10,6 +10,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'services/ad_manager.dart';
 import 'services/ad_free_manager.dart';
 import 'services/fcm_service.dart';
+import 'services/task_generation_service.dart';
 import 'repositories/user_profile_repository.dart';
 import 'router.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -156,7 +157,7 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
     });
   }
 
-  /// ユーザーデータを初期化（プロフィール作成 + FCM初期化）
+  /// ユーザーデータを初期化（プロフィール作成 + FCM初期化 + タスク自動生成）
   Future<void> _initializeUserData() async {
     try {
       final user = FirebaseAuth.instance.currentUser;
@@ -165,17 +166,55 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
           print('[MyApp] ユーザーデータ初期化開始: ${user.uid}');
         }
 
+        // 初期化処理開始時にローディング表示
+        ref.read(globalLoadingProvider.notifier).state = const GlobalLoadingState(
+          requested: true,
+          visible: true,
+          message: 'タスクを生成中...',
+        );
+
         final userProfileRepository = UserProfileRepository();
         await userProfileRepository.createProfileIfNotExists(user.uid);
 
         final fcmService = FCMService();
         await fcmService.initialize(user.uid);
 
+        // タスク自動生成（非同期で実行、エラーは無視）
+        final taskGenerationService = ref.read(taskGenerationServiceProvider);
+        await taskGenerationService.generateTasksOnAppLaunch(ref).catchError((e) {
+          if (kDebugMode) {
+            print('[MyApp] タスク自動生成エラー: $e');
+          }
+        });
+
+        // 完了チェックマークを表示
+        ref.read(globalLoadingProvider.notifier).state = const GlobalLoadingState(
+          requested: true,
+          visible: true,
+          message: 'タスクを生成中...',
+          showSuccess: true,
+        );
+
+        // チェックマーク表示を少し保持してから非表示
+        await Future.delayed(const Duration(milliseconds: 800));
+
+        // すべての初期化完了後にローディング非表示
+        ref.read(globalLoadingProvider.notifier).state = const GlobalLoadingState(
+          requested: false,
+          visible: false,
+        );
+
         if (kDebugMode) {
           print('[MyApp] ユーザーデータ初期化完了');
         }
       }
     } catch (e) {
+      // エラー時もローディング非表示
+      ref.read(globalLoadingProvider.notifier).state = const GlobalLoadingState(
+        requested: false,
+        visible: false,
+      );
+
       if (kDebugMode) {
         print('[MyApp] ユーザーデータ初期化エラー: $e');
       }

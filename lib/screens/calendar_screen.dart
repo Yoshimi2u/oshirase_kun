@@ -4,11 +4,14 @@ import 'package:table_calendar/table_calendar.dart';
 import 'package:intl/intl.dart';
 import 'package:go_router/go_router.dart';
 import '../models/schedule_instance.dart';
+import '../models/schedule_template.dart';
 import '../providers/task_provider.dart';
 import '../providers/schedule_template_provider.dart' as template_provider;
 import '../providers/group_provider.dart';
+import '../providers/user_profile_provider.dart';
 import '../constants/app_spacing.dart';
 import '../constants/app_messages.dart';
+import '../widgets/app_dialogs.dart';
 
 /// カレンダー画面 - 新モデル対応
 class CalendarScreen extends ConsumerStatefulWidget {
@@ -33,12 +36,53 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> with AutomaticK
     _selectedDay = DateTime.now();
   }
 
+  /// 仮想タスクを実体化（Firestoreに保存）して新しいIDを返す
+  Future<String?> _materializeVirtualTask(Task virtualTask) async {
+    try {
+      final taskRepository = ref.read(taskRepositoryProvider);
+
+      // 仮想タスクを実タスクに変換
+      final realTask = virtualTask.copyWith(
+        id: '', // 新しいIDを生成させる
+        isVirtual: false,
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      );
+
+      // Firestoreに保存して新しいIDを取得
+      final newTaskId = await taskRepository.createTask(realTask);
+
+      // キャッシュをクリアして再読み込み（次のフレームで実行）
+      Future.microtask(() {
+        if (mounted) {
+          ref.invalidate(tasksByDateRangeProvider);
+        }
+      });
+
+      return newTaskId;
+    } catch (e) {
+      // エラーハンドリング
+      return null;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     super.build(context); // AutomaticKeepAliveClientMixinのために必要
-    // カレンダーの表示範囲（当月のみ）のタスクを取得
-    final startDate = DateTime(_focusedDay.year, _focusedDay.month, 1);
-    final endDate = DateTime(_focusedDay.year, _focusedDay.month + 1, 0);
+
+    // カレンダーの表示範囲を拡張（前月末〜翌月初を含む）
+    // 当月1日を含む週の日曜日から開始
+    final firstDayOfMonth = DateTime(_focusedDay.year, _focusedDay.month, 1);
+    final lastDayOfMonth = DateTime(_focusedDay.year, _focusedDay.month + 1, 0);
+
+    // 1日の曜日を取得（日曜=7, 月曜=1）
+    final firstWeekday = firstDayOfMonth.weekday == 7 ? 0 : firstDayOfMonth.weekday;
+    // 末日の曜日を取得
+    final lastWeekday = lastDayOfMonth.weekday == 7 ? 0 : lastDayOfMonth.weekday;
+
+    // カレンダー表示の実際の開始日・終了日を計算
+    final startDate = firstDayOfMonth.subtract(Duration(days: firstWeekday));
+    final endDate = lastDayOfMonth.add(Duration(days: 6 - lastWeekday));
 
     final tasksAsync = ref.watch(
       tasksByDateRangeProvider(
@@ -280,12 +324,43 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> with AutomaticK
         onTap: isCompleted
             ? null // 完了済みタスクは編集不可
             : () async {
-                // テンプレートIDからテンプレート情報を取得して編集画面へ（taskIdも渡す）
+                // テンプレートIDからテンプレート情報を取得
                 final templateRepository = ref.read(template_provider.scheduleTemplateRepositoryProvider);
                 final template = await templateRepository.getTemplate(task.templateId);
 
-                if (template != null) {
-                  if (!mounted) return;
+                if (template == null || !mounted) return;
+
+                // 繰り返し設定がある場合は編集方法を選択（カスタムタイプは除く）
+                if (template.repeatType != RepeatType.none && template.repeatType != RepeatType.custom) {
+                  final editOption = await EditMethodDialog.show(context);
+
+                  if (editOption == null || !mounted) return;
+
+                  // 仮想タスクの場合は実体化してから遷移
+                  String taskId = task.id;
+                  if (task.isVirtual) {
+                    // 仮想タスクを実体化して新しいIDを取得
+                    final newId = await _materializeVirtualTask(task);
+                    if (newId == null || !mounted) return;
+                    taskId = newId;
+                  }
+
+                  if (editOption == 'single') {
+                    // このタスクのみ編集
+                    context.push('/task/edit/$taskId');
+                  } else {
+                    // 今後すべて編集
+                    final uri = Uri(
+                      path: '/schedule/edit/${task.templateId}',
+                      queryParameters: {
+                        'initialDate': task.scheduledDate.toIso8601String(),
+                        'taskId': taskId,
+                      },
+                    );
+                    context.push(uri.toString());
+                  }
+                } else {
+                  // 繰り返しなしの場合は直接編集画面へ
                   final uri = Uri(
                     path: '/schedule/edit/${task.templateId}',
                     queryParameters: {
@@ -320,7 +395,6 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> with AutomaticK
                           fontWeight: FontWeight.bold,
                           height: 1.3,
                           color: isCompleted ? Colors.grey : null,
-                          decoration: isCompleted ? TextDecoration.lineThrough : null,
                         ),
                       ),
                       if (task.description.isNotEmpty) ...[
@@ -352,6 +426,63 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> with AutomaticK
                               ),
                             ),
                           ],
+                        ),
+                      ],
+                      // グループタスク完了者表示
+                      if (isCompleted && task.isGroupSchedule && task.completedByMemberId != null) ...[
+                        const SizedBox(height: AppSpacing.xs),
+                        Consumer(
+                          builder: (context, ref, child) {
+                            final currentUserId = ref.watch(currentUserIdProvider);
+
+                            // 自分が完了した場合
+                            if (currentUserId != null && currentUserId == task.completedByMemberId) {
+                              return const Row(
+                                children: [
+                                  Icon(
+                                    Icons.check_circle,
+                                    size: 14,
+                                    color: Colors.green,
+                                  ),
+                                  SizedBox(width: 4),
+                                  Text(
+                                    'あなたが完了',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.green,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ],
+                              );
+                            }
+
+                            // 他のメンバーが完了した場合
+                            return FutureBuilder<String>(
+                              future: _getCompletedByMemberName(ref, task.completedByMemberId!),
+                              builder: (context, snapshot) {
+                                final memberName = snapshot.data ?? '読み込み中...';
+                                return Row(
+                                  children: [
+                                    const Icon(
+                                      Icons.person,
+                                      size: 14,
+                                      color: Colors.green,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      '$memberNameさんが完了',
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.green,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ],
+                                );
+                              },
+                            );
+                          },
                         ),
                       ],
                       // 繰り返し情報を表示
@@ -387,6 +518,17 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> with AutomaticK
         ),
       ),
     );
+  }
+
+  /// 完了者のメンバー名を取得
+  Future<String> _getCompletedByMemberName(WidgetRef ref, String memberId) async {
+    try {
+      final repository = ref.read(userProfileRepositoryProvider);
+      final userProfile = await repository.getUserProfile(memberId);
+      return userProfile?.displayName ?? 'メンバー';
+    } catch (e) {
+      return 'メンバー';
+    }
   }
 }
 

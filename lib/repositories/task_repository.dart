@@ -100,13 +100,88 @@ class TaskRepository {
   /// タスクを完了する
   Future<void> completeTask(String taskId, {String? completedByMemberId}) async {
     try {
+      // タスクを取得
+      final taskDoc = await _collection.doc(taskId).get();
+      if (!taskDoc.exists) {
+        throw Exception('タスクが見つかりません');
+      }
+
+      final taskData = taskDoc.data() as Map<String, dynamic>;
+      final templateId = taskData['templateId'] as String?;
+
+      // タスクを完了
       await _collection.doc(taskId).update({
         'completedAt': FieldValue.serverTimestamp(),
         'completedByMemberId': completedByMemberId,
         'updatedAt': FieldValue.serverTimestamp(),
       });
+
+      // テンプレートの requiresCompletion をチェック
+      if (templateId != null) {
+        final templateDoc = await FirebaseFirestore.instance.collection('schedule_templates').doc(templateId).get();
+
+        if (templateDoc.exists) {
+          final templateData = templateDoc.data();
+          final requiresCompletion = templateData?['requiresCompletion'] as bool?;
+          final repeatType = templateData?['repeatType'] as String?;
+
+          // requiresCompletion=true かつ CUSTOM の場合、次のタスクを生成
+          if (requiresCompletion == true && repeatType == 'custom') {
+            await _generateNextTask(templateData!, templateId, taskData);
+          }
+        }
+      }
     } catch (e) {
       throw Exception('${AppMessages.errorTaskCompleteFailed}: $e');
+    }
+  }
+
+  /// 次のタスクを生成（完了後繰り返し用）
+  Future<void> _generateNextTask(
+    Map<String, dynamic> templateData,
+    String templateId,
+    Map<String, dynamic> completedTaskData,
+  ) async {
+    try {
+      // 完了したタスクの scheduledDate を基準に次のタスク日を計算
+      final completedDate = (completedTaskData['scheduledDate'] as Timestamp).toDate();
+      final repeatInterval = templateData['repeatInterval'] as int? ?? 1;
+
+      // repeatInterval 日後を次のタスク日とする
+      final nextTaskDate = DateTime(
+        completedDate.year,
+        completedDate.month,
+        completedDate.day + repeatInterval,
+      );
+
+      // グループタスクの場合はテンプレートのuserIdを使用、個人タスクの場合は完了したタスクのuserIdを使用
+      final isGroupSchedule = completedTaskData['isGroupSchedule'] ?? false;
+      final userId = isGroupSchedule ? templateData['userId'] : completedTaskData['userId'];
+
+      // 次のタスクを作成
+      await _collection.add({
+        'userId': userId,
+        'groupId': completedTaskData['groupId'],
+        'templateId': templateId,
+        'title': templateData['title'],
+        'description': templateData['description'] ?? '',
+        'scheduledDate': Timestamp.fromDate(nextTaskDate),
+        'completedAt': null,
+        'completedByMemberId': null,
+        'isGroupSchedule': isGroupSchedule,
+        'isDeleted': false,
+        'repeatType': templateData['repeatType'],
+        'weekdays': templateData['selectedWeekdays'],
+        'monthlyDay': null,
+        'repeatInterval': repeatInterval,
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      print('[TaskRepository] 次のタスクを生成: template=$templateId, date=${nextTaskDate.toString()}');
+    } catch (e) {
+      print('[TaskRepository] 次のタスク生成エラー: $e');
+      // エラーが発生してもタスク完了自体は成功させる
     }
   }
 
@@ -127,6 +202,18 @@ class TaskRepository {
   Future<void> deleteTask(String taskId) async {
     try {
       await _collection.doc(taskId).delete();
+    } catch (e) {
+      throw Exception('${AppMessages.errorTaskDeleteFailed}: $e');
+    }
+  }
+
+  /// タスクを論理削除（isDeletedフラグを立てる）
+  Future<void> logicalDeleteTask(String taskId) async {
+    try {
+      await _collection.doc(taskId).update({
+        'isDeleted': true,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
     } catch (e) {
       throw Exception('${AppMessages.errorTaskDeleteFailed}: $e');
     }
@@ -172,7 +259,7 @@ class TaskRepository {
         }
       }
 
-      await deleteTask(taskId);
+      await logicalDeleteTask(taskId);
     } catch (e) {
       if (e.toString().contains('Exception:')) {
         rethrow;
@@ -183,12 +270,22 @@ class TaskRepository {
 
   /// テンプレートに紐づく全タスクを削除
   Future<void> deleteTasksByTemplateId(String templateId, String userId) async {
+    if (kDebugMode) {
+      print('🗑️ [deleteTasksByTemplateId] START: templateId=$templateId, userId=$userId');
+    }
+
     try {
       // templateIdのみでクエリ（グループタスクも含めて削除）
       final querySnapshot = await _collection.where('templateId', isEqualTo: templateId).get();
 
       if (kDebugMode) {
-        print('🗑️ Deleting ${querySnapshot.docs.length} tasks for templateId: $templateId');
+        print('🗑️ [deleteTasksByTemplateId] Found ${querySnapshot.docs.length} tasks for templateId: $templateId');
+        for (final doc in querySnapshot.docs) {
+          final data = doc.data() as Map<String, dynamic>;
+          final scheduledDate = (data['scheduledDate'] as Timestamp?)?.toDate();
+          final isDeleted = data['isDeleted'] ?? false;
+          print('  📋 Task: ${doc.id}, scheduledDate: $scheduledDate, isDeleted: $isDeleted');
+        }
       }
 
       if (querySnapshot.docs.isNotEmpty) {
@@ -224,17 +321,19 @@ class TaskRepository {
         }
       }
 
-      // タスクを1件ずつ削除
+      // タスクを物理削除
+      final batch = _firestore.batch();
       for (final doc in querySnapshot.docs) {
-        await doc.reference.delete();
+        batch.delete(doc.reference);
       }
+      await batch.commit();
 
       if (kDebugMode) {
-        print('✅ Successfully deleted all tasks for templateId: $templateId');
+        print('✅ [deleteTasksByTemplateId] Successfully deleted all tasks for templateId: $templateId');
       }
     } catch (e) {
       if (kDebugMode) {
-        print('❌ Error deleting tasks: $e');
+        print('❌ [deleteTasksByTemplateId] Error deleting tasks: $e');
       }
       if (e.toString().contains('Exception:')) {
         rethrow;
@@ -259,24 +358,61 @@ class TaskRepository {
     }
   }
 
-  /// テンプレートに紐づく指定日以降の未完了タスクを削除
-  Future<void> deleteFutureIncompleteTasksByTemplateId(String templateId, String userId, DateTime fromDate) async {
+  /// テンプレートに紐づく未完了タスクの繰り返し情報を更新
+  Future<void> updateIncompleteTasksRepeatInfo(
+    String templateId,
+    String repeatType,
+    List<int>? weekdays,
+    int? repeatInterval,
+    int? monthlyDay,
+  ) async {
     try {
-      final startOfDay = DateTime(fromDate.year, fromDate.month, fromDate.day);
+      // templateIdの未完了タスクを取得
+      final querySnapshot =
+          await _collection.where('templateId', isEqualTo: templateId).where('completedAt', isNull: true).get();
 
-      // templateIdのみでクエリ（グループタスクも含めて削除）
-      final querySnapshot = await _collection
-          .where('templateId', isEqualTo: templateId)
-          .where('completedAt', isNull: true)
-          .where('scheduledDate', isGreaterThanOrEqualTo: Timestamp.fromDate(startOfDay))
-          .get();
-
-      // タスクを1件ずつ削除
+      // バッチで更新
+      final batch = _firestore.batch();
       for (final doc in querySnapshot.docs) {
-        await doc.reference.delete();
+        batch.update(doc.reference, {
+          'repeatType': repeatType,
+          'weekdays': weekdays,
+          'repeatInterval': repeatInterval,
+          'monthlyDay': monthlyDay,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
       }
+
+      await batch.commit();
     } catch (e) {
-      throw Exception('指定日以降の未完了タスクの削除に失敗しました: $e');
+      throw Exception('タスクの繰り返し情報更新に失敗しました: $e');
+    }
+  }
+
+  /// テンプレートに紐づく未完了タスクのタイトルと説明を更新
+  Future<void> updateIncompleteTasksTitleAndDescription(
+    String templateId,
+    String title,
+    String description,
+  ) async {
+    try {
+      // templateIdの未完了タスクを取得
+      final querySnapshot =
+          await _collection.where('templateId', isEqualTo: templateId).where('completedAt', isNull: true).get();
+
+      // バッチで更新
+      final batch = _firestore.batch();
+      for (final doc in querySnapshot.docs) {
+        batch.update(doc.reference, {
+          'title': title,
+          'description': description,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+      }
+
+      await batch.commit();
+    } catch (e) {
+      throw Exception('タスクのタイトルと説明の更新に失敗しました: $e');
     }
   }
 
@@ -298,10 +434,11 @@ class TaskRepository {
     try {
       final today = DateTime.now();
       final startOfDay = DateTime(today.year, today.month, today.day);
-      final endOfDay = DateTime(today.year, today.month, today.day, 23, 59, 59);
+      final endOfDay = DateTime(today.year, today.month, today.day, 23, 59, 59, 999);
 
       final querySnapshot = await _collection
           .where('userId', isEqualTo: userId)
+          .where('isDeleted', isEqualTo: false)
           .where('scheduledDate', isGreaterThanOrEqualTo: Timestamp.fromDate(startOfDay))
           .where('scheduledDate', isLessThanOrEqualTo: Timestamp.fromDate(endOfDay))
           .orderBy('scheduledDate')
@@ -321,6 +458,7 @@ class TaskRepository {
 
       final querySnapshot = await _collection
           .where('userId', isEqualTo: userId)
+          .where('isDeleted', isEqualTo: false)
           .where('scheduledDate', isGreaterThanOrEqualTo: Timestamp.fromDate(startOfDay))
           .where('scheduledDate', isLessThanOrEqualTo: Timestamp.fromDate(endOfDay))
           .orderBy('scheduledDate')
@@ -340,6 +478,7 @@ class TaskRepository {
 
       final querySnapshot = await _collection
           .where('userId', isEqualTo: userId)
+          .where('isDeleted', isEqualTo: false)
           .where('scheduledDate', isGreaterThanOrEqualTo: Timestamp.fromDate(startOfDay))
           .where('scheduledDate', isLessThanOrEqualTo: Timestamp.fromDate(endOfDay))
           .orderBy('scheduledDate')
@@ -356,6 +495,7 @@ class TaskRepository {
     try {
       final querySnapshot = await _collection
           .where('userId', isEqualTo: userId)
+          .where('isDeleted', isEqualTo: false)
           .where('completedAt', isNull: true)
           .orderBy('scheduledDate')
           .get();
@@ -374,6 +514,7 @@ class TaskRepository {
 
       final querySnapshot = await _collection
           .where('userId', isEqualTo: userId)
+          .where('isDeleted', isEqualTo: false)
           .where('completedAt', isNull: true)
           .where('scheduledDate', isLessThan: Timestamp.fromDate(startOfDay))
           .orderBy('scheduledDate')
@@ -388,8 +529,11 @@ class TaskRepository {
   /// テンプレートに紐づくタスク一覧を取得
   Future<List<Task>> getTasksByTemplateId(String templateId) async {
     try {
-      final querySnapshot =
-          await _collection.where('templateId', isEqualTo: templateId).orderBy('scheduledDate', descending: true).get();
+      final querySnapshot = await _collection
+          .where('templateId', isEqualTo: templateId)
+          .where('isDeleted', isEqualTo: false)
+          .orderBy('scheduledDate', descending: true)
+          .get();
 
       return querySnapshot.docs.map((doc) => Task.fromFirestore(doc)).toList();
     } catch (e) {
@@ -400,7 +544,11 @@ class TaskRepository {
   /// グループのタスク一覧を取得
   Future<List<Task>> getGroupTasks(String groupId) async {
     try {
-      final querySnapshot = await _collection.where('groupId', isEqualTo: groupId).orderBy('scheduledDate').get();
+      final querySnapshot = await _collection
+          .where('groupId', isEqualTo: groupId)
+          .where('isDeleted', isEqualTo: false)
+          .orderBy('scheduledDate')
+          .get();
 
       return querySnapshot.docs.map((doc) => Task.fromFirestore(doc)).toList();
     } catch (e) {
@@ -412,13 +560,14 @@ class TaskRepository {
   Stream<List<Task>> watchTodayTasks(String userId) {
     final today = DateTime.now();
     final startOfDay = DateTime(today.year, today.month, today.day);
-    final endOfDay = DateTime(today.year, today.month, today.day, 23, 59, 59);
+    final endOfDay = DateTime(today.year, today.month, today.day, 23, 59, 59, 999);
 
     // パフォーマンス最適化: 過去30日分のみ取得（それ以前の未完了タスクは非表示）
     final thirtyDaysAgo = startOfDay.subtract(const Duration(days: 30));
 
     return _collection
         .where('userId', isEqualTo: userId)
+        .where('isDeleted', isEqualTo: false)
         .where('scheduledDate', isGreaterThanOrEqualTo: Timestamp.fromDate(thirtyDaysAgo))
         .where('scheduledDate', isLessThanOrEqualTo: Timestamp.fromDate(endOfDay))
         .orderBy('scheduledDate')
@@ -426,12 +575,17 @@ class TaskRepository {
         .map((snapshot) {
       // 今日のタスク + 過去の未完了タスクのみフィルタ
       return snapshot.docs.map((doc) => Task.fromFirestore(doc)).where((task) {
-        // 今日のタスクは全て含める
-        if (task.scheduledDate.isAfter(startOfDay.subtract(const Duration(seconds: 1)))) {
+        final taskDate = task.scheduledDate;
+        // 今日のタスク（0:00:00 〜 23:59:59.999）
+        if (taskDate.isAtSameMomentAs(startOfDay) ||
+            (taskDate.isAfter(startOfDay) && taskDate.isBefore(endOfDay.add(const Duration(milliseconds: 1))))) {
           return true;
         }
         // 過去のタスクは未完了のみ含める
-        return !task.isCompleted;
+        if (taskDate.isBefore(startOfDay)) {
+          return !task.isCompleted;
+        }
+        return false;
       }).toList();
     });
   }
@@ -443,6 +597,7 @@ class TaskRepository {
 
     return _collection
         .where('userId', isEqualTo: userId)
+        .where('isDeleted', isEqualTo: false)
         .where('scheduledDate', isGreaterThanOrEqualTo: Timestamp.fromDate(startOfDay))
         .where('scheduledDate', isLessThanOrEqualTo: Timestamp.fromDate(endOfDay))
         .orderBy('scheduledDate')
@@ -460,6 +615,7 @@ class TaskRepository {
 
     return _collection
         .where('groupId', isEqualTo: groupId)
+        .where('isDeleted', isEqualTo: false)
         .where('isGroupSchedule', isEqualTo: true)
         .where('scheduledDate', isGreaterThanOrEqualTo: Timestamp.fromDate(thirtyDaysAgo))
         .orderBy('scheduledDate')
@@ -474,6 +630,7 @@ class TaskRepository {
 
     return _collection
         .where('userId', isEqualTo: userId)
+        .where('isDeleted', isEqualTo: false)
         .where('scheduledDate', isGreaterThanOrEqualTo: Timestamp.fromDate(startOfDay))
         .where('scheduledDate', isLessThanOrEqualTo: Timestamp.fromDate(endOfDay))
         .orderBy('scheduledDate')
@@ -492,6 +649,7 @@ class TaskRepository {
 
     final snapshot = await _collection
         .where('groupId', isEqualTo: groupId)
+        .where('isDeleted', isEqualTo: false)
         .where('isGroupSchedule', isEqualTo: true)
         .where('scheduledDate', isGreaterThanOrEqualTo: Timestamp.fromDate(startOfDay))
         .where('scheduledDate', isLessThanOrEqualTo: Timestamp.fromDate(endOfDay))

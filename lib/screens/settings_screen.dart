@@ -8,6 +8,7 @@ import '../providers/user_profile_provider.dart';
 import '../providers/theme_provider.dart';
 import '../utils/toast_utils.dart';
 import '../services/fcm_service.dart';
+import '../widgets/app_dialogs.dart';
 
 /// 設定画面
 class SettingsScreen extends ConsumerWidget {
@@ -329,9 +330,22 @@ class SettingsScreen extends ConsumerWidget {
 
   /// 表示名を編集
   Future<void> _editDisplayName(BuildContext context, WidgetRef ref, String currentName) async {
-    final String? newName = await showDialog<String>(
-      context: context,
-      builder: (context) => _DisplayNameDialog(currentName: currentName),
+    final newName = await InputDialog.show(
+      context,
+      title: '表示名の変更',
+      label: '表示名',
+      hint: '新しい表示名',
+      initialValue: currentName,
+      maxLength: 50,
+      validator: (value) {
+        if (value == null || value.trim().isEmpty) {
+          return '表示名を入力してください';
+        }
+        if (value.trim().length > 50) {
+          return '表示名は50文字以内で入力してください';
+        }
+        return null;
+      },
     );
 
     if (newName != null && newName.isNotEmpty && context.mounted) {

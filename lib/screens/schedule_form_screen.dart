@@ -1,16 +1,19 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:intl/intl.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import '../models/schedule_template.dart';
 import '../models/schedule_instance.dart';
+import '../models/group.dart';
+import '../models/group_role.dart';
 import '../providers/schedule_template_provider.dart' as template_provider;
 import '../providers/task_provider.dart';
 import '../providers/group_provider.dart';
 import '../utils/toast_utils.dart';
 import '../services/loading_service.dart';
 import '../constants/app_messages.dart';
+import '../widgets/app_dialogs.dart';
 
 /// 予定登録・編集画面（新モデル: ScheduleTemplate + Task）
 class ScheduleFormScreen extends ConsumerStatefulWidget {
@@ -31,6 +34,9 @@ class ScheduleFormScreen extends ConsumerStatefulWidget {
 
 class _ScheduleFormScreenState extends ConsumerState<ScheduleFormScreen> {
   final _formKey = GlobalKey<FormState>();
+  final _scrollController = ScrollController();
+  final _titleKey = GlobalKey();
+  final _weekdayKey = GlobalKey();
   final _titleController = TextEditingController();
   final _descriptionController = TextEditingController();
 
@@ -49,8 +55,8 @@ class _ScheduleFormScreenState extends ConsumerState<ScheduleFormScreen> {
   // 既存のテンプレート（更新時に使用）
   ScheduleTemplate? _existingTemplate;
 
-  // 選択されたタスク（削除用）
-  Task? _selectedTask;
+  // 編集権限フラグ（グループメンバーの場合はfalse）
+  bool _canEdit = true;
 
   @override
   void initState() {
@@ -70,24 +76,34 @@ class _ScheduleFormScreenState extends ConsumerState<ScheduleFormScreen> {
         final repository = ref.read(template_provider.scheduleTemplateRepositoryProvider);
         final template = await repository.getTemplate(widget.scheduleId!);
 
-        // タスク情報を読み込む（taskIdが指定されている場合）
-        if (widget.taskId != null) {
-          final taskRepository = ref.read(taskRepositoryProvider);
-          _selectedTask = await taskRepository.getTask(widget.taskId!);
-        }
-
         if (template != null && mounted) {
+          // グループテンプレートの場合、編集権限をチェック
+          bool canEdit = true;
+          if (template.isGroupSchedule && template.groupId != null) {
+            final groupRepository = ref.read(groupRepositoryProvider);
+            final groupWithRoles = await groupRepository.getGroupWithRoles(template.groupId!);
+            if (groupWithRoles != null) {
+              // オーナーまたは管理者のみ編集可能
+              final userRole = groupWithRoles.memberRoles[userId];
+              canEdit = userRole == GroupRole.owner || userRole == GroupRole.admin;
+            }
+          }
+
           setState(() {
-            _existingTemplate = template; // 既存テンプレートを保存
+            // 既存テンプレートを保存（selectedWeekdaysはコピーして保存）
+            _existingTemplate = template.copyWith(
+              selectedWeekdays: template.selectedWeekdays != null ? List<int>.from(template.selectedWeekdays!) : null,
+            );
             _titleController.text = template.title;
             _descriptionController.text = template.description;
             _repeatType = template.repeatType;
             _customDays = template.repeatInterval ?? 1;
-            _selectedWeekdays = template.selectedWeekdays ?? [];
+            _selectedWeekdays = template.selectedWeekdays != null ? List<int>.from(template.selectedWeekdays!) : [];
             _monthlyDay = template.monthlyDay ?? 1;
             _requiresCompletion = template.requiresCompletion;
             _isGroupSchedule = template.isGroupSchedule;
             _selectedGroupId = template.groupId;
+            _canEdit = canEdit;
             _isLoading = false;
           });
           return;
@@ -103,17 +119,60 @@ class _ScheduleFormScreenState extends ConsumerState<ScheduleFormScreen> {
   void dispose() {
     _titleController.dispose();
     _descriptionController.dispose();
+    _scrollController.dispose();
     super.dispose();
+  }
+
+  /// エラーがあるウィジェットまでスクロール
+  void _scrollToError() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      // タイトルが空の場合
+      if (_titleController.text.isEmpty && _titleKey.currentContext != null) {
+        Scrollable.ensureVisible(
+          _titleKey.currentContext!,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeInOut,
+        );
+        return;
+      }
+
+      // 毎週で曜日が未選択の場合
+      if (_repeatType == RepeatType.customWeekly && _selectedWeekdays.isEmpty && _weekdayKey.currentContext != null) {
+        Scrollable.ensureVisible(
+          _weekdayKey.currentContext!,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeInOut,
+        );
+        return;
+      }
+    });
+  }
+
+  /// 曜日リストが等しいかチェック
+  bool _areWeekdaysEqual(List<int>? list1, List<int>? list2) {
+    if (list1 == null && list2 == null) return true;
+    if (list1 == null || list2 == null) return false;
+    if (list1.length != list2.length) return false;
+
+    final sorted1 = List<int>.from(list1)..sort();
+    final sorted2 = List<int>.from(list2)..sort();
+
+    for (int i = 0; i < sorted1.length; i++) {
+      if (sorted1[i] != sorted2[i]) return false;
+    }
+    return true;
   }
 
   Future<void> _saveSchedule() async {
     if (!_formKey.currentState!.validate()) {
+      _scrollToError();
       return;
     }
 
     // 毎週を選択した場合、曜日が1つも選択されていないかチェック
     if (_repeatType == RepeatType.customWeekly && _selectedWeekdays.isEmpty) {
       ToastUtils.showError('曜日を1つ以上選択してください');
+      _scrollToError();
       return;
     }
 
@@ -155,18 +214,15 @@ class _ScheduleFormScreenState extends ConsumerState<ScheduleFormScreen> {
         // 新規作成
         final templateId = await templateRepository.createTemplateWithPermission(template, userId);
 
-        // 翌月末までのタスクを一括作成（カスタム完了必須は初回のみ）
-        // 開始日を指定してタスク生成
-        final taskDates = template.generateTaskDatesUntilNextMonthEnd(_startDate);
-
-        for (final taskDate in taskDates) {
+        // 繰り返しなしとカスタムの場合は初回タスクのみ手動作成
+        if (template.repeatType == RepeatType.none || template.repeatType == RepeatType.custom) {
           final task = Task(
             id: '',
             userId: userId,
             templateId: templateId,
             title: template.title,
             description: template.description,
-            scheduledDate: taskDate,
+            scheduledDate: _startDate,
             completedAt: null,
             completedByMemberId: null,
             groupId: template.groupId,
@@ -179,6 +235,11 @@ class _ScheduleFormScreenState extends ConsumerState<ScheduleFormScreen> {
             updatedAt: now,
           );
           await taskRepository.createTask(task);
+        } else {
+          // その他の繰り返しタイプは新しいテンプレート用のCloud Functionを呼び出し
+          final functions = FirebaseFunctions.instanceFor(region: 'asia-northeast1');
+          final callable = functions.httpsCallable('generateTasksForTemplate');
+          await callable.call({'templateId': templateId});
         }
 
         ToastUtils.showSuccess('予定を作成しました');
@@ -186,21 +247,40 @@ class _ScheduleFormScreenState extends ConsumerState<ScheduleFormScreen> {
         // 更新
         await templateRepository.updateTemplateWithPermission(template, userId);
 
-        // 既存の未完了タスクのみ削除（完了済みタスクは保持）
-        await taskRepository.deleteIncompleteTasksByTemplateId(widget.scheduleId!, userId);
+        // 繰り返し設定が変更されたかチェック
+        final repeatTypeChanged = _existingTemplate?.repeatType != template.repeatType;
+        final intervalChanged = _existingTemplate?.repeatInterval != template.repeatInterval;
+        final weekdaysChanged = !_areWeekdaysEqual(_existingTemplate?.selectedWeekdays, template.selectedWeekdays);
+        final monthlyDayChanged = _existingTemplate?.monthlyDay != template.monthlyDay;
 
-        // 新しい設定で翌月末までのタスクを再生成
-        // 開始日を指定してタスク生成
-        final taskDates = template.generateTaskDatesUntilNextMonthEnd(_startDate);
+        final repeatSettingsChanged = repeatTypeChanged || intervalChanged || weekdaysChanged || monthlyDayChanged;
 
-        for (final taskDate in taskDates) {
+        if (kDebugMode) {
+          print('🔍 繰り返し設定変更チェック:');
+          print(
+              '  - repeatType: ${_existingTemplate?.repeatType} -> ${template.repeatType} (changed: $repeatTypeChanged)');
+          print(
+              '  - interval: ${_existingTemplate?.repeatInterval} -> ${template.repeatInterval} (changed: $intervalChanged)');
+          print(
+              '  - weekdays: ${_existingTemplate?.selectedWeekdays} -> ${template.selectedWeekdays} (changed: $weekdaysChanged)');
+          print(
+              '  - monthlyDay: ${_existingTemplate?.monthlyDay} -> ${template.monthlyDay} (changed: $monthlyDayChanged)');
+          print('  - 総合判定: $repeatSettingsChanged');
+        }
+
+        // 繰り返しなしとカスタムの場合
+        if (template.repeatType == RepeatType.none || template.repeatType == RepeatType.custom) {
+          // 既存の未完了タスクを削除
+          await taskRepository.deleteIncompleteTasksByTemplateId(widget.scheduleId!, userId);
+
+          // 新しい日付でタスクを作成
           final task = Task(
             id: '',
             userId: userId,
             templateId: widget.scheduleId!,
             title: template.title,
             description: template.description,
-            scheduledDate: taskDate,
+            scheduledDate: _startDate,
             completedAt: null,
             completedByMemberId: null,
             groupId: template.groupId,
@@ -213,6 +293,23 @@ class _ScheduleFormScreenState extends ConsumerState<ScheduleFormScreen> {
             updatedAt: now,
           );
           await taskRepository.createTask(task);
+        } else {
+          // その他の繰り返しタイプ（毎日、毎週、毎月など）
+          if (repeatSettingsChanged) {
+            // 繰り返し設定が変更された場合のみ、既存タスクを削除して再生成
+            await taskRepository.deleteIncompleteTasksByTemplateId(widget.scheduleId!, userId);
+
+            final functions = FirebaseFunctions.instanceFor(region: 'asia-northeast1');
+            final callable = functions.httpsCallable('generateTasksForTemplate');
+            await callable.call({'templateId': widget.scheduleId!});
+          } else {
+            // 繰り返し設定が変更されていない場合は、既存タスクのタイトルと説明のみ更新
+            await taskRepository.updateIncompleteTasksTitleAndDescription(
+              widget.scheduleId!,
+              template.title,
+              template.description,
+            );
+          }
         }
 
         ToastUtils.showSuccess('予定を更新しました');
@@ -222,6 +319,7 @@ class _ScheduleFormScreenState extends ConsumerState<ScheduleFormScreen> {
       await LoadingService.hide(withSuccess: true);
 
       // 予定一覧とカレンダーの両方を更新
+      ref.invalidate(tomorrowTasksProvider);
       ref.invalidate(upcomingTasksProvider);
       ref.invalidate(tasksByDateRangeProvider);
 
@@ -239,191 +337,18 @@ class _ScheduleFormScreenState extends ConsumerState<ScheduleFormScreen> {
   }
 
   Future<void> _deleteSchedule() async {
-    // 繰り返し設定がある場合は削除オプションを選択
-    if (_existingTemplate?.repeatType != null && _existingTemplate!.repeatType != RepeatType.none) {
-      final deleteOption = await showDialog<String>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text(AppMessages.deleteMethodTitle),
-          content: const Text(AppMessages.deleteMethodMessage),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, null),
-              child: const Text(AppMessages.buttonCancel),
-            ),
-            // タスクが選択されている場合のみ「このタスクのみ」を表示
-            if (_selectedTask != null)
-              TextButton(
-                onPressed: () => Navigator.pop(context, 'single'),
-                style: TextButton.styleFrom(foregroundColor: Colors.orange),
-                child: const Text(AppMessages.buttonThisTaskOnly),
-              ),
-            TextButton(
-              onPressed: () => Navigator.pop(context, 'future'),
-              style: TextButton.styleFrom(foregroundColor: Colors.red),
-              child: const Text(AppMessages.buttonFutureAll),
-            ),
-          ],
-        ),
-      );
-
-      if (deleteOption == null) return;
-
-      if (deleteOption == 'single') {
-        await _deleteSingleTask();
-      } else if (deleteOption == 'future') {
-        await _deleteFutureTasks();
-      }
-    } else {
-      // 繰り返し設定がない場合は通常削除
-      await _deleteAllTasks();
-    }
-  }
-
-  /// このタスクのみ削除
-  Future<void> _deleteSingleTask() async {
-    if (_selectedTask == null) {
-      if (mounted) {
-        ToastUtils.showError(AppMessages.errorTaskNotSelected);
-      }
-      return;
-    }
-
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text(AppMessages.confirmationTitle),
-        content: Text('${DateFormat('M月d日').format(_selectedTask!.scheduledDate)}のタスクを削除しますか?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text(AppMessages.buttonCancel),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: TextButton.styleFrom(foregroundColor: Colors.orange),
-            child: const Text(AppMessages.buttonDelete),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed == true) {
-      LoadingService.show();
-
-      try {
-        final taskRepository = ref.read(taskRepositoryProvider);
-        final userId = FirebaseAuth.instance.currentUser?.uid;
-
-        if (userId == null) {
-          throw Exception('ユーザー情報が取得できません');
-        }
-
-        await taskRepository.deleteTaskWithPermission(_selectedTask!.id, userId);
-
-        await LoadingService.hide(withSuccess: true);
-
-        // 予定一覧とカレンダーの両方を更新
-        ref.invalidate(upcomingTasksProvider);
-        ref.invalidate(tasksByDateRangeProvider);
-
-        if (mounted) {
-          ToastUtils.showSuccess(AppMessages.deleteTaskSuccess);
-          context.pop();
-        }
-      } catch (e) {
-        await LoadingService.hide();
-
-        if (mounted) {
-          ToastUtils.showError(AppMessages.deleteFailed);
-        }
-      }
-    }
-  }
-
-  /// 今後のタスクのみ削除（テンプレートとタスクを削除）
-  Future<void> _deleteFutureTasks() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text(AppMessages.confirmationTitle),
-        content: const Text(AppMessages.deleteFutureTasksConfirm),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text(AppMessages.buttonCancel),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text(AppMessages.buttonDelete),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed == true && widget.scheduleId != null) {
-      LoadingService.show();
-
-      try {
-        final userId = ref.read(template_provider.currentUserIdProvider);
-        if (userId == null) {
-          throw Exception('ユーザーIDが取得できませんでした');
-        }
-
-        final taskRepository = ref.read(taskRepositoryProvider);
-        final templateRepository = ref.read(template_provider.scheduleTemplateRepositoryProvider);
-        final tomorrow = DateTime.now().add(const Duration(days: 1));
-
-        // 明日以降の未完了タスクを削除
-        await taskRepository.deleteFutureIncompleteTasksByTemplateId(
-          widget.scheduleId!,
-          userId,
-          tomorrow,
-        );
-
-        // テンプレートも削除
-        await templateRepository.deleteTemplate(widget.scheduleId!);
-
-        await LoadingService.hide(withSuccess: true);
-
-        // 予定一覧とカレンダーの両方を更新
-        ref.invalidate(upcomingTasksProvider);
-        ref.invalidate(tasksByDateRangeProvider);
-
-        if (mounted) {
-          ToastUtils.showSuccess(AppMessages.deleteFutureTasksSuccess);
-          context.pop();
-        }
-      } catch (e) {
-        await LoadingService.hide();
-
-        if (mounted) {
-          ToastUtils.showError(AppMessages.deleteFailed);
-        }
-      }
-    }
+    // すべての場合で全タスク削除を実行
+    await _deleteAllTasks();
   }
 
   /// すべてのタスクを削除（テンプレート + 全タスク）
   Future<void> _deleteAllTasks() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text(AppMessages.confirmationTitle),
-        content: const Text(AppMessages.deleteScheduleConfirm),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text(AppMessages.buttonCancel),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text(AppMessages.buttonDelete),
-          ),
-        ],
-      ),
+    final confirmed = await DeleteConfirmationDialog.show(
+      context,
+      title: '予定を削除',
+      message: 'この操作は取り消せません。',
+      subMessage: 'すべての関連タスクが削除されます。',
+      confirmText: AppMessages.buttonDelete,
     );
 
     if (confirmed == true && widget.scheduleId != null) {
@@ -449,6 +374,7 @@ class _ScheduleFormScreenState extends ConsumerState<ScheduleFormScreen> {
         await LoadingService.hide(withSuccess: true);
 
         // 予定一覧とカレンダーの両方を更新
+        ref.invalidate(tomorrowTasksProvider);
         ref.invalidate(upcomingTasksProvider);
         ref.invalidate(tasksByDateRangeProvider);
 
@@ -484,7 +410,8 @@ class _ScheduleFormScreenState extends ConsumerState<ScheduleFormScreen> {
           if (widget.scheduleId != null)
             IconButton(
               icon: const Icon(Icons.delete),
-              onPressed: _deleteSchedule,
+              color: Colors.red,
+              onPressed: _canEdit ? _deleteSchedule : null,
             ),
         ],
       ),
@@ -500,7 +427,9 @@ class _ScheduleFormScreenState extends ConsumerState<ScheduleFormScreen> {
             children: [
               // タイトル入力
               TextFormField(
+                key: _titleKey,
                 controller: _titleController,
+                enabled: _canEdit,
                 decoration: const InputDecoration(
                   labelText: 'タイトル',
                   hintText: '例: 薬を飲む',
@@ -527,6 +456,7 @@ class _ScheduleFormScreenState extends ConsumerState<ScheduleFormScreen> {
               // 説明入力
               TextFormField(
                 controller: _descriptionController,
+                enabled: _canEdit,
                 decoration: const InputDecoration(
                   labelText: '説明（任意）',
                   hintText: '詳細な説明を入力',
@@ -554,14 +484,16 @@ class _ScheduleFormScreenState extends ConsumerState<ScheduleFormScreen> {
                   children: [
                     SwitchListTile(
                       value: _isGroupSchedule,
-                      onChanged: (value) {
-                        setState(() {
-                          _isGroupSchedule = value;
-                          if (!value) {
-                            _selectedGroupId = null;
-                          }
-                        });
-                      },
+                      onChanged: _canEdit
+                          ? (value) {
+                              setState(() {
+                                _isGroupSchedule = value;
+                                if (!value) {
+                                  _selectedGroupId = null;
+                                }
+                              });
+                            }
+                          : null,
                       title: const Text('グループ予定'),
                       subtitle: Text(
                         _isGroupSchedule ? '全員の予定として作成されます' : '個人の予定として作成されます',
@@ -618,33 +550,86 @@ class _ScheduleFormScreenState extends ConsumerState<ScheduleFormScreen> {
                                 );
                               }
 
-                              return Padding(
-                                padding: const EdgeInsets.all(16.0),
-                                child: DropdownButtonFormField<String>(
-                                  value: _selectedGroupId,
-                                  decoration: const InputDecoration(
-                                    labelText: 'グループを選択',
-                                    border: OutlineInputBorder(),
-                                    prefixIcon: Icon(Icons.group),
+                              // 現在のユーザーIDを取得
+                              final currentUserId = ref.watch(template_provider.currentUserIdProvider);
+
+                              if (currentUserId == null) {
+                                return const Padding(
+                                  padding: EdgeInsets.all(16.0),
+                                  child: Text(
+                                    'ユーザー情報の取得に失敗しました',
+                                    style: TextStyle(color: Colors.grey),
                                   ),
-                                  items: groups.map((group) {
-                                    return DropdownMenuItem(
-                                      value: group.id,
-                                      child: Text(group.name),
-                                    );
-                                  }).toList(),
-                                  onChanged: (value) {
-                                    setState(() {
-                                      _selectedGroupId = value;
-                                    });
-                                  },
-                                  validator: (value) {
-                                    if (_isGroupSchedule && (value == null || value.isEmpty)) {
-                                      return 'グループを選択してください';
+                                );
+                              }
+
+                              // テンプレート作成権限があるグループを非同期でフィルタ
+                              return FutureBuilder<List<Group>>(
+                                future: Future.wait(
+                                  groups.map((group) async {
+                                    final groupRepository = ref.read(groupRepositoryProvider);
+                                    final groupWithRoles = await groupRepository.getGroupWithRoles(group.id);
+                                    if (groupWithRoles != null) {
+                                      final userRole = groupWithRoles.memberRoles[currentUserId];
+                                      if (userRole == GroupRole.owner || userRole == GroupRole.admin) {
+                                        return group;
+                                      }
                                     }
                                     return null;
-                                  },
-                                ),
+                                  }),
+                                ).then((results) => results.whereType<Group>().toList()),
+                                builder: (context, snapshot) {
+                                  if (snapshot.connectionState == ConnectionState.waiting) {
+                                    return const Padding(
+                                      padding: EdgeInsets.all(16.0),
+                                      child: Center(child: CircularProgressIndicator()),
+                                    );
+                                  }
+
+                                  final creatableGroups = snapshot.data ?? [];
+
+                                  if (creatableGroups.isEmpty) {
+                                    return const Padding(
+                                      padding: EdgeInsets.all(16.0),
+                                      child: Text(
+                                        'グループ予定を作成できるグループがありません\n※オーナーまたは管理者のみが繰り返し予定を作成できます',
+                                        style: TextStyle(color: Colors.grey),
+                                        textAlign: TextAlign.center,
+                                      ),
+                                    );
+                                  }
+
+                                  return Padding(
+                                    padding: const EdgeInsets.all(16.0),
+                                    child: DropdownButtonFormField<String>(
+                                      value: _selectedGroupId,
+                                      decoration: const InputDecoration(
+                                        labelText: 'グループを選択',
+                                        border: OutlineInputBorder(),
+                                        prefixIcon: Icon(Icons.group),
+                                      ),
+                                      items: creatableGroups.map((group) {
+                                        return DropdownMenuItem(
+                                          value: group.id,
+                                          child: Text(group.name),
+                                        );
+                                      }).toList(),
+                                      onChanged: _canEdit
+                                          ? (value) {
+                                              setState(() {
+                                                _selectedGroupId = value;
+                                              });
+                                            }
+                                          : null,
+                                      validator: (value) {
+                                        if (_isGroupSchedule && (value == null || value.isEmpty)) {
+                                          return 'グループを選択してください';
+                                        }
+                                        return null;
+                                      },
+                                    ),
+                                  );
+                                },
                               );
                             },
                           );
@@ -669,11 +654,13 @@ class _ScheduleFormScreenState extends ConsumerState<ScheduleFormScreen> {
                       leading: Radio<RepeatType>(
                         value: RepeatType.none,
                         groupValue: _repeatType,
-                        onChanged: (value) {
-                          setState(() {
-                            _repeatType = value!;
-                          });
-                        },
+                        onChanged: _canEdit
+                            ? (value) {
+                                setState(() {
+                                  _repeatType = value!;
+                                });
+                              }
+                            : null,
                       ),
                       title: const Text('繰り返しなし'),
                       onTap: null, // タップ無効化
@@ -682,11 +669,13 @@ class _ScheduleFormScreenState extends ConsumerState<ScheduleFormScreen> {
                       leading: Radio<RepeatType>(
                         value: RepeatType.daily,
                         groupValue: _repeatType,
-                        onChanged: (value) {
-                          setState(() {
-                            _repeatType = value!;
-                          });
-                        },
+                        onChanged: _canEdit
+                            ? (value) {
+                                setState(() {
+                                  _repeatType = value!;
+                                });
+                              }
+                            : null,
                       ),
                       title: const Text('毎日'),
                       onTap: null, // タップ無効化
@@ -696,21 +685,24 @@ class _ScheduleFormScreenState extends ConsumerState<ScheduleFormScreen> {
                       leading: Radio<RepeatType>(
                         value: RepeatType.customWeekly,
                         groupValue: _repeatType,
-                        onChanged: (value) {
-                          setState(() {
-                            _repeatType = value!;
-                            if (_selectedWeekdays.isEmpty) {
-                              // 初期値として火曜日を設定
-                              _selectedWeekdays = [2];
-                            }
-                          });
-                        },
+                        onChanged: _canEdit
+                            ? (value) {
+                                setState(() {
+                                  _repeatType = value!;
+                                  if (_selectedWeekdays.isEmpty) {
+                                    // 初期値として火曜日を設定
+                                    _selectedWeekdays = [2];
+                                  }
+                                });
+                              }
+                            : null,
                       ),
                       title: const Text('毎週'),
                       onTap: null, // タップ無効化
                     ),
                     if (_repeatType == RepeatType.customWeekly)
                       Padding(
+                        key: _weekdayKey,
                         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -733,16 +725,18 @@ class _ScheduleFormScreenState extends ConsumerState<ScheduleFormScreen> {
                                     label: Text(['月', '火', '水', '木', '金', '土', '日'][i - 1]),
                                     selected: _selectedWeekdays.contains(i),
                                     showCheckmark: false,
-                                    onSelected: (selected) {
-                                      setState(() {
-                                        if (selected) {
-                                          _selectedWeekdays.add(i);
-                                          _selectedWeekdays.sort();
-                                        } else {
-                                          _selectedWeekdays.remove(i);
-                                        }
-                                      });
-                                    },
+                                    onSelected: _canEdit
+                                        ? (selected) {
+                                            setState(() {
+                                              if (selected) {
+                                                _selectedWeekdays.add(i);
+                                                _selectedWeekdays.sort();
+                                              } else {
+                                                _selectedWeekdays.remove(i);
+                                              }
+                                            });
+                                          }
+                                        : null,
                                   ),
                               ],
                             ),
@@ -753,11 +747,13 @@ class _ScheduleFormScreenState extends ConsumerState<ScheduleFormScreen> {
                       leading: Radio<RepeatType>(
                         value: RepeatType.monthly,
                         groupValue: _repeatType,
-                        onChanged: (value) {
-                          setState(() {
-                            _repeatType = value!;
-                          });
-                        },
+                        onChanged: _canEdit
+                            ? (value) {
+                                setState(() {
+                                  _repeatType = value!;
+                                });
+                              }
+                            : null,
                       ),
                       title: Row(
                         children: [
@@ -766,6 +762,7 @@ class _ScheduleFormScreenState extends ConsumerState<ScheduleFormScreen> {
                             width: 60,
                             child: TextFormField(
                               initialValue: _monthlyDay.toString(),
+                              enabled: _canEdit,
                               keyboardType: TextInputType.number,
                               textInputAction: TextInputAction.done,
                               decoration: const InputDecoration(
@@ -796,11 +793,13 @@ class _ScheduleFormScreenState extends ConsumerState<ScheduleFormScreen> {
                       leading: Radio<RepeatType>(
                         value: RepeatType.monthlyLastDay,
                         groupValue: _repeatType,
-                        onChanged: (value) {
-                          setState(() {
-                            _repeatType = value!;
-                          });
-                        },
+                        onChanged: _canEdit
+                            ? (value) {
+                                setState(() {
+                                  _repeatType = value!;
+                                });
+                              }
+                            : null,
                       ),
                       title: const Text('毎月末日'),
                       onTap: null, // タップ無効化
@@ -809,11 +808,15 @@ class _ScheduleFormScreenState extends ConsumerState<ScheduleFormScreen> {
                       leading: Radio<RepeatType>(
                         value: RepeatType.custom,
                         groupValue: _repeatType,
-                        onChanged: (value) {
-                          setState(() {
-                            _repeatType = value!;
-                          });
-                        },
+                        onChanged: _canEdit
+                            ? (value) {
+                                setState(() {
+                                  _repeatType = value!;
+                                  // カスタムは常に完了必須
+                                  _requiresCompletion = true;
+                                });
+                              }
+                            : null,
                       ),
                       title: Row(
                         children: [
@@ -821,6 +824,7 @@ class _ScheduleFormScreenState extends ConsumerState<ScheduleFormScreen> {
                             width: 60,
                             child: TextFormField(
                               initialValue: _customDays.toString(),
+                              enabled: _canEdit,
                               keyboardType: TextInputType.number,
                               textInputAction: TextInputAction.done,
                               decoration: const InputDecoration(
@@ -854,22 +858,30 @@ class _ScheduleFormScreenState extends ConsumerState<ScheduleFormScreen> {
               ),
               const SizedBox(height: 16),
 
-              // 完了必須フラグ（カスタム（何日ごと）の場合のみ表示）
+              // カスタム繰り返しの説明（完了必須固定）
               if (_repeatType == RepeatType.custom)
                 Card(
-                  child: SwitchListTile(
-                    secondary: const Icon(Icons.flag),
-                    title: const Text('完了必須'),
-                    subtitle: const Text(
-                      '有効：完了後に次の予定を作成\n無効：指定日数ごとに自動作成',
-                      style: TextStyle(fontSize: 12),
+                  color: Theme.of(context).brightness == Brightness.dark
+                      ? Colors.blue.shade900.withOpacity(0.3)
+                      : Colors.blue.shade50,
+                  child: ListTile(
+                    leading: Icon(
+                      Icons.info_outline,
+                      color: Theme.of(context).brightness == Brightness.dark ? Colors.blue.shade200 : Colors.blue,
                     ),
-                    value: _requiresCompletion,
-                    onChanged: (value) {
-                      setState(() {
-                        _requiresCompletion = value;
-                      });
-                    },
+                    title: Text(
+                      '完了後に次の予定を自動作成',
+                      style: TextStyle(
+                        color: Theme.of(context).brightness == Brightness.dark ? Colors.blue.shade100 : null,
+                      ),
+                    ),
+                    subtitle: Text(
+                      'このタスクを完了すると、設定した日数後に次のタスクが自動的に作成されます。',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Theme.of(context).brightness == Brightness.dark ? Colors.grey.shade300 : null,
+                      ),
+                    ),
                   ),
                 ),
               if (_repeatType == RepeatType.custom) const SizedBox(height: 16),
@@ -879,36 +891,61 @@ class _ScheduleFormScreenState extends ConsumerState<ScheduleFormScreen> {
                 Card(
                   child: ListTile(
                     leading: const Icon(Icons.event),
-                    title: const Text('開始日'),
+                    title: const Text('日付'),
                     subtitle: Text(
                       '${_startDate.year}年${_startDate.month}月${_startDate.day}日',
                       style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                     ),
                     trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-                    onTap: () async {
-                      final picked = await showDatePicker(
-                        context: context,
-                        initialDate: _startDate,
-                        firstDate: DateTime(2020),
-                        lastDate: DateTime(2100),
-                        locale: const Locale('ja', 'JP'),
-                      );
-                      if (picked != null) {
-                        setState(() {
-                          _startDate = picked;
-                        });
-                      }
-                    },
+                    onTap: _canEdit
+                        ? () async {
+                            final picked = await showDatePicker(
+                              context: context,
+                              initialDate: _startDate,
+                              firstDate: DateTime(2020),
+                              lastDate: DateTime(2100),
+                              locale: const Locale('ja', 'JP'),
+                            );
+                            if (picked != null) {
+                              setState(() {
+                                _startDate = picked;
+                              });
+                            }
+                          }
+                        : null,
                   ),
                 ),
               if (_repeatType == RepeatType.none || _repeatType == RepeatType.custom) const SizedBox(height: 16),
               const SizedBox(height: 24),
 
+              // 編集権限がない場合の警告メッセージ
+              if (!_canEdit) ...[
+                Card(
+                  color: Colors.orange.shade50,
+                  child: const Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Row(
+                      children: [
+                        Icon(Icons.info_outline, color: Colors.orange),
+                        SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            'このグループ予定は閲覧のみです。\n編集はオーナーのみが行えます。',
+                            style: TextStyle(color: Colors.orange),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
+
               // 保存ボタン
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
-                  onPressed: _saveSchedule,
+                  onPressed: _canEdit ? _saveSchedule : null,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.blue,
                     foregroundColor: Colors.white,

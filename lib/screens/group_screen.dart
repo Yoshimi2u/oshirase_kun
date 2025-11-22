@@ -9,6 +9,7 @@ import '../models/group_role.dart';
 import '../providers/group_provider.dart';
 import '../utils/toast_utils.dart';
 import '../constants/app_messages.dart';
+import '../widgets/app_dialogs.dart';
 
 /// グループ管理管理画面
 class GroupScreen extends ConsumerWidget {
@@ -59,7 +60,7 @@ class GroupScreen extends ConsumerWidget {
           );
         },
       ),
-      bottomNavigationBar: _buildBottomActions(context),
+      bottomNavigationBar: _buildBottomActions(context, ref),
     );
   }
 
@@ -98,7 +99,7 @@ class GroupScreen extends ConsumerWidget {
   }
 
   /// 下部のアクションボタン
-  Widget _buildBottomActions(BuildContext context) {
+  Widget _buildBottomActions(BuildContext context, WidgetRef ref) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -118,7 +119,7 @@ class GroupScreen extends ConsumerWidget {
             SizedBox(
               width: double.infinity,
               child: ElevatedButton.icon(
-                onPressed: () => _showCreateGroupDialog(context),
+                onPressed: () => _showCreateGroupDialog(context, ref),
                 icon: const Icon(Icons.add),
                 label: const Text(
                   '新しいグループを作成',
@@ -138,7 +139,7 @@ class GroupScreen extends ConsumerWidget {
             SizedBox(
               width: double.infinity,
               child: OutlinedButton.icon(
-                onPressed: () => _showJoinGroupDialog(context),
+                onPressed: () => _showJoinGroupDialog(context, ref),
                 icon: const Icon(Icons.login),
                 label: Text(
                   '招待コードで参加',
@@ -163,213 +164,113 @@ class GroupScreen extends ConsumerWidget {
   }
 
   /// グループ作成ダイアログ
-  void _showCreateGroupDialog(BuildContext context) {
-    final nameController = TextEditingController();
-
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('グループを作成'),
-        content: TextField(
-          controller: nameController,
-          decoration: const InputDecoration(
-            labelText: 'グループ名',
-            hintText: '例: プロジェクトA、田中家',
-            border: OutlineInputBorder(),
-          ),
-          autofocus: true,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('キャンセル'),
-          ),
-          Consumer(
-            builder: (context, ref, child) {
-              return TextButton(
-                onPressed: () async {
-                  if (nameController.text.trim().isEmpty) {
-                    ToastUtils.showError('グループ名を入力してください');
-                    return;
-                  }
-
-                  final user = FirebaseAuth.instance.currentUser;
-                  if (user == null) {
-                    ToastUtils.showError('ユーザーがログインしていません');
-                    return;
-                  }
-
-                  try {
-                    final group = await ref.read(groupNotifierProvider.notifier).createGroup(
-                          name: nameController.text.trim(),
-                          ownerId: user.uid,
-                        );
-
-                    if (context.mounted) {
-                      Navigator.pop(context);
-                      if (group != null) {
-                        _showInviteCodeDialog(context, group);
-                      } else {
-                        ToastUtils.showError('グループの作成に失敗しました');
-                      }
-                    }
-                  } catch (e) {
-                    if (context.mounted) {
-                      Navigator.pop(context);
-                      ToastUtils.showError('グループの作成に失敗しました');
-                    }
-                  }
-                },
-                child: const Text('作成'),
-              );
-            },
-          ),
-        ],
-      ),
+  void _showCreateGroupDialog(BuildContext context, WidgetRef ref) async {
+    final groupName = await InputDialog.show(
+      context,
+      title: 'グループを作成',
+      label: 'グループ名',
+      hint: '例: プロジェクトA、田中家',
+      maxLength: 50,
+      validator: (value) {
+        if (value == null || value.trim().isEmpty) {
+          return 'グループ名を入力してください';
+        }
+        return null;
+      },
     );
+
+    if (groupName == null || groupName.trim().isEmpty || !context.mounted) return;
+
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      ToastUtils.showError('ユーザーがログインしていません');
+      return;
+    }
+
+    try {
+      final group = await ref.read(groupNotifierProvider.notifier).createGroup(
+            name: groupName.trim(),
+            ownerId: user.uid,
+          );
+
+      if (context.mounted) {
+        if (group != null) {
+          _showInviteCodeDialog(context, group);
+        } else {
+          ToastUtils.showError('グループの作成に失敗しました');
+        }
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ToastUtils.showError('グループの作成に失敗しました');
+      }
+    }
   }
 
   /// 招待コード表示ダイアログ
   void _showInviteCodeDialog(BuildContext context, Group group) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('グループを作成しました'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('招待コード'),
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.blue.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
-                group.inviteCode,
-                style: TextStyle(
-                  fontSize: 32,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 4,
-                  color: Theme.of(context).brightness == Brightness.dark ? Colors.blue[300] : Colors.blue[700],
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'メンバーにこのコードを共有してください',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 12,
-                color: Theme.of(context).brightness == Brightness.dark ? Colors.grey[300] : Colors.grey[700],
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Clipboard.setData(ClipboardData(text: group.inviteCode));
-              ToastUtils.showSuccess('招待コードをコピーしました');
-            },
-            child: const Text('コピー'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('閉じる'),
-          ),
-        ],
-      ),
+    InviteCodeDialog.show(
+      context,
+      inviteCode: group.inviteCode,
+      onCopy: () => ToastUtils.showSuccess('招待コードをコピーしました'),
     );
   }
 
   /// グループ参加ダイアログ
-  void _showJoinGroupDialog(BuildContext context) {
-    final codeController = TextEditingController();
-
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('グループに参加'),
-        content: TextField(
-          controller: codeController,
-          decoration: const InputDecoration(
-            labelText: '招待コード',
-            hintText: '6桁のコードを入力',
-            border: OutlineInputBorder(),
-          ),
-          textCapitalization: TextCapitalization.characters,
-          maxLength: 6,
-          autofocus: true,
-          onSubmitted: (_) {
-            // Enterキーで参加処理を実行
-          },
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('キャンセル'),
-          ),
-          Consumer(
-            builder: (context, ref, child) {
-              return TextButton(
-                onPressed: () async {
-                  final code = codeController.text.trim().toUpperCase();
-
-                  if (code.isEmpty || code.length != 6) {
-                    ToastUtils.showError('6桁の招待コードを入力してください');
-                    return;
-                  }
-
-                  final user = FirebaseAuth.instance.currentUser;
-                  if (user == null) {
-                    ToastUtils.showError('ユーザーがログインしていません');
-                    return;
-                  }
-
-                  // ダイアログを閉じる前に処理を開始
-                  Navigator.pop(context);
-
-                  try {
-                    // ローディング表示（オプション）
-                    if (context.mounted) {
-                      ToastUtils.showSuccess('グループに参加中...');
-                    }
-
-                    final group = await ref.read(groupNotifierProvider.notifier).joinGroup(
-                          inviteCode: code,
-                          userId: user.uid,
-                        );
-
-                    if (context.mounted) {
-                      if (group != null) {
-                        ToastUtils.showSuccess('「${group.name}」に参加しました');
-                      } else {
-                        ToastUtils.showError('招待コードが見つかりません');
-                      }
-                    }
-                  } catch (e) {
-                    if (context.mounted) {
-                      final errorMessage = e.toString();
-                      if (errorMessage.contains('既にこのグループ')) {
-                        ToastUtils.showError('既にこのグループに参加しています');
-                      } else if (errorMessage.contains('招待コード')) {
-                        ToastUtils.showError('招待コードが見つかりません');
-                      } else {
-                        ToastUtils.showError('グループへの参加に失敗しました');
-                      }
-                    }
-                  }
-                },
-                child: const Text('参加'),
-              );
-            },
-          ),
-        ],
-      ),
+  void _showJoinGroupDialog(BuildContext context, WidgetRef ref) async {
+    final code = await InputDialog.show(
+      context,
+      title: 'グループに参加',
+      label: '招待コード',
+      hint: '6桁のコードを入力',
+      maxLength: 6,
+      validator: (value) {
+        if (value == null || value.trim().isEmpty) {
+          return '招待コードを入力してください';
+        }
+        if (value.trim().length != 6) {
+          return '6桁のコードを入力してください';
+        }
+        return null;
+      },
     );
+
+    if (code == null || code.trim().isEmpty || !context.mounted) return;
+
+    final inviteCode = code.trim().toUpperCase();
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      ToastUtils.showError('ユーザーがログインしていません');
+      return;
+    }
+
+    try {
+      ToastUtils.showSuccess('グループに参加中...');
+
+      final group = await ref.read(groupNotifierProvider.notifier).joinGroup(
+            inviteCode: inviteCode,
+            userId: user.uid,
+          );
+
+      if (context.mounted) {
+        if (group != null) {
+          ToastUtils.showSuccess('「${group.name}」に参加しました');
+        } else {
+          ToastUtils.showError('招待コードが見つかりません');
+        }
+      }
+    } catch (e) {
+      if (context.mounted) {
+        final errorMessage = e.toString();
+        if (errorMessage.contains('既にこのグループ')) {
+          ToastUtils.showError('既にこのグループに参加しています');
+        } else if (errorMessage.contains('招待コード')) {
+          ToastUtils.showError('招待コードが見つかりません');
+        } else {
+          ToastUtils.showError('グループへの参加に失敗しました');
+        }
+      }
+    }
   }
 }
 
@@ -562,22 +463,13 @@ class _GroupCard extends ConsumerWidget {
                           return;
                         }
 
-                        final confirmed = await showDialog<bool>(
-                          context: context,
-                          builder: (context) => AlertDialog(
-                            title: const Text('確認'),
-                            content: Text('「${currentGroup.name}」から退出しますか?'),
-                            actions: [
-                              TextButton(
-                                onPressed: () => Navigator.pop(context, false),
-                                child: const Text('キャンセル'),
-                              ),
-                              TextButton(
-                                onPressed: () => Navigator.pop(context, true),
-                                child: const Text('退出'),
-                              ),
-                            ],
-                          ),
+                        final confirmed = await ConfirmationDialog.show(
+                          context,
+                          title: 'グループから退出',
+                          message: '「${currentGroup.name}」から退出しますか?',
+                          icon: Icons.exit_to_app,
+                          confirmColor: Colors.orange,
+                          confirmText: '退出',
                         );
 
                         if (confirmed == true && user != null && context.mounted) {
@@ -599,23 +491,12 @@ class _GroupCard extends ConsumerWidget {
                         leading: const Icon(Icons.delete, color: Colors.red),
                         title: const Text('グループを削除', style: TextStyle(color: Colors.red)),
                         onTap: () async {
-                          final confirmed = await showDialog<bool>(
-                            context: context,
-                            builder: (context) => AlertDialog(
-                              title: const Text('確認'),
-                              content: Text('「${currentGroup.name}」を削除しますか?\nこの操作は取り消せません。'),
-                              actions: [
-                                TextButton(
-                                  onPressed: () => Navigator.pop(context, false),
-                                  child: const Text('キャンセル'),
-                                ),
-                                TextButton(
-                                  onPressed: () => Navigator.pop(context, true),
-                                  style: TextButton.styleFrom(foregroundColor: Colors.red),
-                                  child: const Text('削除'),
-                                ),
-                              ],
-                            ),
+                          final confirmed = await DeleteConfirmationDialog.show(
+                            context,
+                            title: 'グループを削除',
+                            message: '「${currentGroup.name}」を削除しますか?',
+                            subMessage: 'この操作は取り消せません。\nグループのすべてのデータが削除されます。',
+                            confirmText: AppMessages.buttonDelete,
                           );
 
                           if (confirmed == true && context.mounted) {
@@ -943,23 +824,12 @@ class _GroupCard extends ConsumerWidget {
     // showDialog の前に repository インスタンスを取得
     final repository = ref.read(groupRepositoryProvider);
 
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('メンバーを削除'),
-        content: Text('$displayName をグループから削除しますか？'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('キャンセル'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('削除'),
-          ),
-        ],
-      ),
+    final confirmed = await DeleteConfirmationDialog.show(
+      context,
+      title: 'メンバーを削除',
+      message: '$displayName をグループから削除しますか？',
+      subMessage: 'この操作は取り消せません。',
+      confirmText: '削除',
     );
 
     if (confirmed != true) return;

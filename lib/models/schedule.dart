@@ -9,6 +9,20 @@ enum RepeatType {
   custom, // カスタム（〇日ごと）
 }
 
+/// RepeatType拡張メソッド
+extension RepeatTypeExtension on RepeatType {
+  /// Firestore保存用の文字列（"customWeekly"形式）
+  String get value => name;
+
+  /// 文字列からRepeatTypeを取得
+  static RepeatType fromString(String value) {
+    return RepeatType.values.firstWhere(
+      (e) => e.name == value,
+      orElse: () => RepeatType.none,
+    );
+  }
+}
+
 /// タスクステータスの列挙型
 enum ScheduleStatus {
   pending, // 未完了（期限内）
@@ -74,9 +88,8 @@ class Schedule {
       id: doc.id,
       title: data['title'] ?? '',
       description: data['description'] ?? '',
-      repeatType: RepeatType.values.firstWhere(
-        (e) => e.toString() == data['repeatType'],
-        orElse: () => RepeatType.none,
+      repeatType: RepeatTypeExtension.fromString(
+        data['repeatType'] ?? 'none',
       ),
       repeatInterval: data['repeatInterval'],
       selectedWeekdays: (data['selectedWeekdays'] as List<dynamic>?)?.map((e) => e as int).toList(),
@@ -103,7 +116,7 @@ class Schedule {
     return {
       'title': title,
       'description': description,
-      'repeatType': repeatType.toString(),
+      'repeatType': repeatType.value,
       'repeatInterval': repeatInterval,
       'selectedWeekdays': selectedWeekdays,
       'monthlyDay': monthlyDay,
