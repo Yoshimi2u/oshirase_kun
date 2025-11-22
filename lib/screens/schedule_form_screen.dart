@@ -10,6 +10,7 @@ import '../models/group_role.dart';
 import '../providers/schedule_template_provider.dart' as template_provider;
 import '../providers/task_provider.dart';
 import '../providers/group_provider.dart';
+import '../providers/auth_provider.dart';
 import '../utils/toast_utils.dart';
 import '../services/loading_service.dart';
 import '../constants/app_messages.dart';
@@ -70,7 +71,7 @@ class _ScheduleFormScreenState extends ConsumerState<ScheduleFormScreen> {
 
   Future<void> _loadSchedule() async {
     if (widget.scheduleId != null) {
-      final userId = ref.read(template_provider.currentUserIdProvider);
+      final userId = ref.read(currentUserIdProvider);
 
       if (userId != null) {
         final repository = ref.read(template_provider.scheduleTemplateRepositoryProvider);
@@ -176,7 +177,7 @@ class _ScheduleFormScreenState extends ConsumerState<ScheduleFormScreen> {
       return;
     }
 
-    final userId = ref.read(template_provider.currentUserIdProvider);
+    final userId = ref.read(currentUserIdProvider);
     if (userId == null) {
       ToastUtils.showError('ユーザーIDが取得できませんでした');
       return;
@@ -356,7 +357,7 @@ class _ScheduleFormScreenState extends ConsumerState<ScheduleFormScreen> {
       LoadingService.show();
 
       try {
-        final userId = ref.read(template_provider.currentUserIdProvider);
+        final userId = ref.read(currentUserIdProvider);
         if (userId == null) {
           throw Exception('ユーザーIDが取得できませんでした');
         }
@@ -551,7 +552,7 @@ class _ScheduleFormScreenState extends ConsumerState<ScheduleFormScreen> {
                               }
 
                               // 現在のユーザーIDを取得
-                              final currentUserId = ref.watch(template_provider.currentUserIdProvider);
+                              final currentUserId = ref.watch(currentUserIdProvider);
 
                               if (currentUserId == null) {
                                 return const Padding(

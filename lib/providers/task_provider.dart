@@ -1,12 +1,12 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import '../models/schedule_instance.dart';
 import '../models/schedule_template.dart';
 import '../repositories/task_repository.dart';
 import 'group_provider.dart';
 import 'schedule_template_provider.dart';
+import 'auth_provider.dart';
 
 /// 期間パラメータ用のクラス
 class DateRangeParams {
@@ -33,11 +33,6 @@ class DateRangeParams {
 /// TaskRepository のプロバイダー
 final taskRepositoryProvider = Provider<TaskRepository>((ref) {
   return TaskRepository();
-});
-
-/// 現在のユーザーIDのプロバイダー
-final currentUserIdProvider = Provider<String?>((ref) {
-  return FirebaseAuth.instance.currentUser?.uid;
 });
 
 /// 今日のタスク一覧のストリームプロバイダー（自分のタスク + グループタスク）

@@ -1,18 +1,13 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import '../models/schedule_template.dart';
 import '../repositories/schedule_template_repository.dart';
 import 'group_provider.dart';
+import 'auth_provider.dart';
 
 /// ScheduleTemplateRepository のプロバイダー
 final scheduleTemplateRepositoryProvider = Provider<ScheduleTemplateRepository>((ref) {
   return ScheduleTemplateRepository();
-});
-
-/// 現在のユーザーIDのプロバイダー
-final currentUserIdProvider = Provider<String?>((ref) {
-  return FirebaseAuth.instance.currentUser?.uid;
 });
 
 /// テンプレート一覧のストリームプロバイダー（自分のテンプレート + 所属グループのテンプレート）

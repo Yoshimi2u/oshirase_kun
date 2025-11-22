@@ -26,25 +26,35 @@ class _TodayTasksTabState extends ConsumerState<TodayTasksTab> with AutomaticKee
     return todayAsync.when(
       data: (allTasks) {
         if (allTasks.isEmpty) {
-          return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  Icons.check_circle_outline,
-                  size: 80,
-                  color: Colors.green[300],
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  '今日のタスクはありません',
-                  style: TextStyle(
-                    fontSize: 18,
-                    color: Colors.grey[600],
+          return ListView(
+            padding: const EdgeInsets.all(8),
+            children: [
+              SizedBox(
+                height: MediaQuery.of(context).size.height * 0.5,
+                child: Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.check_circle_outline,
+                        size: 80,
+                        color: Colors.green[300],
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        '今日のタスクはありません',
+                        style: TextStyle(
+                          fontSize: 18,
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              ],
-            ),
+              ),
+              // インラインバナー広告
+              InlineBannerAd(adUnitId: AdManager.inlineBannerAdUnitId),
+            ],
           );
         }
 

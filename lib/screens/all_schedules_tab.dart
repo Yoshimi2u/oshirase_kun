@@ -4,8 +4,6 @@ import 'package:intl/intl.dart';
 import '../models/schedule_instance.dart';
 import '../providers/task_provider.dart';
 import '../constants/app_spacing.dart';
-import '../widgets/inline_banner_ad.dart';
-import '../services/ad_manager.dart';
 import 'widgets/schedule_list_widgets.dart';
 
 /// 全予定タブ（明日以降のタスクを日付別に表示）
@@ -18,12 +16,6 @@ class AllSchedulesTab extends ConsumerStatefulWidget {
 
 class _AllSchedulesTabState extends ConsumerState<AllSchedulesTab> with AutomaticKeepAliveClientMixin {
   bool _showMore = false; // もっと見るフラグ（初期は明日のみ）
-
-  // 広告ウィジェットのキャッシュ（状態を保持）
-  late final Widget _adWidget = InlineBannerAd(
-    key: const Key('schedule_inline_ad'),
-    adUnitId: AdManager.scheduleInlineBannerAdUnitId,
-  );
 
   @override
   bool get wantKeepAlive => true;
@@ -57,9 +49,6 @@ class _AllSchedulesTabState extends ConsumerState<AllSchedulesTab> with Automati
                   )),
               const SizedBox(height: 8),
             ],
-            const SizedBox(height: 8),
-            _adWidget,
-            const SizedBox(height: 8),
           ],
         );
 

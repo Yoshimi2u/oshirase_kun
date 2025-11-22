@@ -120,6 +120,15 @@
       "collectionGroup": "tasks",
       "queryScope": "COLLECTION",
       "fields": [
+        {"fieldPath": "groupId", "order": "ASCENDING"},
+        {"fieldPath": "templateId", "order": "ASCENDING"},
+        {"fieldPath": "scheduledDate", "order": "DESCENDING"}
+      ]
+    },
+    {
+      "collectionGroup": "tasks",
+      "queryScope": "COLLECTION",
+      "fields": [
         {"fieldPath": "templateId", "order": "ASCENDING"},
         {"fieldPath": "scheduledDate", "order": "ASCENDING"}
       ]

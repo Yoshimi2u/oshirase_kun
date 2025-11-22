@@ -1,7 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/notification_settings.dart';
 import '../repositories/notification_settings_repository.dart';
-import 'schedule_provider.dart'; // currentUserIdProviderをインポート
+import 'auth_provider.dart';
 
 /// 通知設定リポジトリのプロバイダー
 final notificationSettingsRepositoryProvider = Provider<NotificationSettingsRepository>((ref) {
@@ -10,19 +10,13 @@ final notificationSettingsRepositoryProvider = Provider<NotificationSettingsRepo
 
 /// 通知設定のStreamProvider
 final notificationSettingsProvider = StreamProvider<NotificationSettings>((ref) {
-  final userIdAsync = ref.watch(currentUserIdProvider);
+  final userId = ref.watch(currentUserIdProvider);
   final repository = ref.watch(notificationSettingsRepositoryProvider);
 
-  return userIdAsync.when(
-    data: (userId) {
-      if (userId == null) {
-        return Stream.value(NotificationSettings.defaultSettings());
-      }
-      return repository.watchSettings(userId);
-    },
-    loading: () => Stream.value(NotificationSettings.defaultSettings()),
-    error: (_, __) => Stream.value(NotificationSettings.defaultSettings()),
-  );
+  if (userId == null) {
+    return Stream.value(NotificationSettings.defaultSettings());
+  }
+  return repository.watchSettings(userId);
 });
 
 /// 通知設定の変更を管理するNotifier
@@ -97,10 +91,6 @@ class NotificationSettingsNotifier extends StateNotifier<AsyncValue<Notification
 final notificationSettingsNotifierProvider =
     StateNotifierProvider<NotificationSettingsNotifier, AsyncValue<NotificationSettings>>((ref) {
   final repository = ref.watch(notificationSettingsRepositoryProvider);
-  final userIdAsync = ref.watch(currentUserIdProvider);
-  final userId = userIdAsync.maybeWhen(
-    data: (id) => id,
-    orElse: () => null,
-  );
+  final userId = ref.watch(currentUserIdProvider);
   return NotificationSettingsNotifier(repository, userId);
 });

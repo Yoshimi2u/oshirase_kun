@@ -6,6 +6,7 @@ import '../models/schedule_instance.dart';
 import '../models/group_role.dart';
 import '../providers/task_provider.dart';
 import '../providers/group_provider.dart';
+import '../providers/auth_provider.dart';
 import '../utils/toast_utils.dart';
 import '../services/loading_service.dart';
 import '../constants/app_messages.dart';

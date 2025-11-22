@@ -9,6 +9,7 @@ import '../providers/task_provider.dart';
 import '../providers/schedule_template_provider.dart' as template_provider;
 import '../providers/group_provider.dart';
 import '../providers/user_profile_provider.dart';
+import '../providers/auth_provider.dart';
 import '../constants/app_spacing.dart';
 import '../constants/app_messages.dart';
 import '../widgets/app_dialogs.dart';

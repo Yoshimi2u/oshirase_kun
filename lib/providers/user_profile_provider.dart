@@ -1,7 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/user_profile.dart';
 import '../repositories/user_profile_repository.dart';
-import 'schedule_provider.dart'; // currentUserIdProviderをインポート
+import 'auth_provider.dart';
 
 /// ユーザープロフィールリポジトリのプロバイダー
 final userProfileRepositoryProvider = Provider<UserProfileRepository>((ref) {
@@ -10,13 +10,7 @@ final userProfileRepositoryProvider = Provider<UserProfileRepository>((ref) {
 
 /// ユーザープロフィールのStreamプロバイダー（自動作成付き）
 final userProfileStreamProvider = StreamProvider.autoDispose<UserProfile?>((ref) async* {
-  final userIdAsync = ref.watch(currentUserIdProvider);
-
-  final userId = await userIdAsync.when(
-    data: (id) async => id,
-    loading: () async => null,
-    error: (_, __) async => null,
-  );
+  final userId = ref.watch(currentUserIdProvider);
 
   if (userId == null) {
     yield null;
@@ -94,10 +88,6 @@ class UserProfileNotifier extends StateNotifier<AsyncValue<UserProfile?>> {
 /// ユーザープロフィールNotifierのプロバイダー
 final userProfileNotifierProvider = StateNotifierProvider<UserProfileNotifier, AsyncValue<UserProfile?>>((ref) {
   final repository = ref.watch(userProfileRepositoryProvider);
-  final userIdAsync = ref.watch(currentUserIdProvider);
-  final userId = userIdAsync.maybeWhen(
-    data: (id) => id,
-    orElse: () => null,
-  );
+  final userId = ref.watch(currentUserIdProvider);
   return UserProfileNotifier(repository, userId);
 });

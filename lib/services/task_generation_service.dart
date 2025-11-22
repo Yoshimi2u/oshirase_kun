@@ -83,8 +83,15 @@ class TaskGenerationService {
       });
 
       print('[TaskGeneration] グループタスク生成完了: ${result.data}');
-    } catch (e) {
+    } on FirebaseFunctionsException catch (e) {
+      print('[TaskGeneration] グループタスク生成エラー ($groupId)');
+      print('  Code: ${e.code}');
+      print('  Message: ${e.message}');
+      print('  Details: ${e.details}');
+      print('  Stack trace: ${e.stackTrace}');
+    } catch (e, stackTrace) {
       print('[TaskGeneration] グループタスク生成エラー ($groupId): $e');
+      print('  Stack trace: $stackTrace');
     }
   }
 
