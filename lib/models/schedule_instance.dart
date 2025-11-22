@@ -207,7 +207,7 @@ class Task {
         return '毎週$selectedDays';
       case 'monthly':
         if (monthlyDay == null || monthlyDay! < 1 || monthlyDay! > 28) return '毎月';
-        return '毎月${monthlyDay}日';
+        return '毎月$monthlyDay日';
       case 'monthlyLastDay':
         return '毎月末日';
       case 'custom':

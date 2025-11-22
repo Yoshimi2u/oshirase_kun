@@ -178,9 +178,13 @@ class TaskRepository {
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
-      print('[TaskRepository] 次のタスクを生成: template=$templateId, date=${nextTaskDate.toString()}');
+      if (kDebugMode) {
+        print('[TaskRepository] 次のタスクを生成: template=$templateId, date=${nextTaskDate.toString()}');
+      }
     } catch (e) {
-      print('[TaskRepository] 次のタスク生成エラー: $e');
+      if (kDebugMode) {
+        print('[TaskRepository] 次のタスク生成エラー: $e');
+      }
       // エラーが発生してもタスク完了自体は成功させる
     }
   }
@@ -338,7 +342,7 @@ class TaskRepository {
       if (e.toString().contains('Exception:')) {
         rethrow;
       }
-      throw Exception('${AppMessages.errorTasksDeleteByTemplateFailed}');
+      throw Exception(AppMessages.errorTasksDeleteByTemplateFailed);
     }
   }
 

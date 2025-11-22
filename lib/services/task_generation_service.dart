@@ -1,6 +1,7 @@
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 /// タスク自動生成サービス
@@ -30,7 +31,9 @@ class TaskGenerationService {
       // グループタスクの生成
       await _generateGroupTasks(user.uid, ref);
     } catch (e) {
-      print('[TaskGeneration] エラー: $e');
+      if (kDebugMode) {
+        print('[TaskGeneration] エラー: $e');
+      }
       // エラーが発生してもアプリは継続
     }
   }
@@ -38,17 +41,25 @@ class TaskGenerationService {
   /// 個人タスクの生成実行
   Future<void> _generatePersonalTasks(String userId, WidgetRef ref) async {
     try {
-      print('[TaskGeneration] === 個人タスク生成開始 ===');
-      print('[TaskGeneration] userId: $userId');
+      if (kDebugMode) {
+        print('[TaskGeneration] === 個人タスク生成開始 ===');
+        print('[TaskGeneration] userId: $userId');
+      }
 
       // Cloud Functionsでタスク生成（内部で全テンプレートをチェック・生成）
-      print('[TaskGeneration] Cloud Functions呼び出し: generateUserTasks');
+      if (kDebugMode) {
+        print('[TaskGeneration] Cloud Functions呼び出し: generateUserTasks');
+      }
       final callable = _functions.httpsCallable('generateUserTasks');
       final result = await callable.call({});
 
-      print('[TaskGeneration] 個人タスク生成完了: ${result.data}');
+      if (kDebugMode) {
+        print('[TaskGeneration] 個人タスク生成完了: ${result.data}');
+      }
     } catch (e) {
-      print('[TaskGeneration] 個人タスク生成エラー: $e');
+      if (kDebugMode) {
+        print('[TaskGeneration] 個人タスク生成エラー: $e');
+      }
     }
   }
 
@@ -58,7 +69,9 @@ class TaskGenerationService {
       // 1. 所属グループを取得
       final groupIds = await _getUserGroupIds(userId);
       if (groupIds.isEmpty) {
-        print('[TaskGeneration] 所属グループなし');
+        if (kDebugMode) {
+          print('[TaskGeneration] 所属グループなし');
+        }
         return;
       }
 
@@ -67,14 +80,18 @@ class TaskGenerationService {
         await _generateGroupTasksForGroup(groupId, ref);
       }
     } catch (e) {
-      print('[TaskGeneration] グループタスク生成エラー: $e');
+      if (kDebugMode) {
+        print('[TaskGeneration] グループタスク生成エラー: $e');
+      }
     }
   }
 
   /// 指定グループのタスク生成
   Future<void> _generateGroupTasksForGroup(String groupId, WidgetRef ref) async {
     try {
-      print('[TaskGeneration] グループタスク生成開始: $groupId');
+      if (kDebugMode) {
+        print('[TaskGeneration] グループタスク生成開始: $groupId');
+      }
 
       // Cloud Functionsでタスク生成（内部で全テンプレートをチェック・生成）
       final callable = _functions.httpsCallable('generateGroupTasks');
@@ -82,16 +99,22 @@ class TaskGenerationService {
         'groupId': groupId,
       });
 
-      print('[TaskGeneration] グループタスク生成完了: ${result.data}');
+      if (kDebugMode) {
+        print('[TaskGeneration] グループタスク生成完了: ${result.data}');
+      }
     } on FirebaseFunctionsException catch (e) {
-      print('[TaskGeneration] グループタスク生成エラー ($groupId)');
-      print('  Code: ${e.code}');
-      print('  Message: ${e.message}');
-      print('  Details: ${e.details}');
-      print('  Stack trace: ${e.stackTrace}');
+      if (kDebugMode) {
+        print('[TaskGeneration] グループタスク生成エラー ($groupId)');
+        print('  Code: ${e.code}');
+        print('  Message: ${e.message}');
+        print('  Details: ${e.details}');
+        print('  Stack trace: ${e.stackTrace}');
+      }
     } catch (e, stackTrace) {
-      print('[TaskGeneration] グループタスク生成エラー ($groupId): $e');
-      print('  Stack trace: $stackTrace');
+      if (kDebugMode) {
+        print('[TaskGeneration] グループタスク生成エラー ($groupId): $e');
+        print('  Stack trace: $stackTrace');
+      }
     }
   }
 

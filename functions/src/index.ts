@@ -700,26 +700,12 @@ export const generateUserTasks = onCall(
       for (const templateDoc of validTemplates) {
         const template = templateDoc.data() as ScheduleTemplateData;
 
-        // CUSTOM の場合、初回タスクが存在すればスキップ（常に完了必須として扱う）
+        // CUSTOM の場合は常にスキップ（Dart側で完了時に生成）
         if (template.repeatType === RepeatType.CUSTOM) {
-          const hasAnyTask = await db
-            .collection("tasks")
-            .where("userId", "==", userId)
-            .where("templateId", "==", templateDoc.id)
-            .limit(1)
-            .get();
-
-          if (!hasAnyTask.empty) {
-            // 既にタスクが存在（Dart側で管理）
-            logger.info(
-              `[個人タスク生成] スキップ（完了後管理）: template=${templateDoc.id}`
-            );
-            continue;
-          }
-          // 初回タスクがないので生成を続行
           logger.info(
-            `[個人タスク生成] 初回タスク生成: template=${templateDoc.id}`
+            `[個人タスク生成] スキップ（完了後管理）: template=${templateDoc.id}`
           );
+          continue;
         }
 
         logger.info(
@@ -1347,26 +1333,12 @@ export const generateGroupTasks = onCall(
       for (const templateDoc of validTemplates) {
         const template = templateDoc.data() as ScheduleTemplateData;
 
-        // CUSTOM の場合、初回タスクが存在すればスキップ(常に完了必須として扱う)
+        // CUSTOM の場合は常にスキップ（Dart側で完了時に生成）
         if (template.repeatType === RepeatType.CUSTOM) {
-          const hasAnyTask = await db
-            .collection("tasks")
-            .where("groupId", "==", groupId)
-            .where("templateId", "==", templateDoc.id)
-            .limit(1)
-            .get();
-
-          if (!hasAnyTask.empty) {
-            // 既にタスクが存在（Dart側で管理）
-            logger.info(
-              `[グループタスク生成] スキップ（完了後管理）: template=${templateDoc.id}`
-            );
-            continue;
-          }
-          // 初回タスクがないので生成を続行
           logger.info(
-            `[グループタスク生成] 初回タスク生成: template=${templateDoc.id}`
+            `[グループタスク生成] スキップ（完了後管理）: template=${templateDoc.id}`
           );
+          continue;
         }
 
         logger.info(
